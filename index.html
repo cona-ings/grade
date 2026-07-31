@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>昇降格管理台帳</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+// ---- lucide-react の代替となる簡易アイコン(スタンドアロンHTML用) ----
+const { useState, useEffect, useMemo, useRef } = React;
+
+function Icon({ size = 16, color = 'currentColor', children, viewBox = '0 0 24 24' }) {
+  return (
+    <svg width={size} height={size} viewBox={viewBox} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+const Plus = (p) => <Icon {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Icon>;
+const Search = (p) => <Icon {...p}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></Icon>;
+const X = (p) => <Icon {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Icon>;
+const ChevronLeft = (p) => <Icon {...p}><polyline points="15 18 9 12 15 6" /></Icon>;
+const ArrowUp = (p) => <Icon {...p}><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></Icon>;
+const ArrowDown = (p) => <Icon {...p}><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></Icon>;
+const Minus = (p) => <Icon {...p}><line x1="5" y1="12" x2="19" y2="12" /></Icon>;
+const Users = (p) => <Icon {...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>;
+const Trash2 = (p) => <Icon {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" /></Icon>;
+const Loader2 = (p) => <Icon {...p}><line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" /><line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" /><line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" /></Icon>;
+const ScrollText = (p) => <Icon {...p}><path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4" /><path d="M19 17V5a2 2 0 0 0-2-2H4" /><line x1="12" y1="7" x2="18" y2="7" /><line x1="12" y1="11" x2="18" y2="11" /></Icon>;
+const Upload = (p) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></Icon>;
+const Pencil = (p) => <Icon {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></Icon>;
+const Check = (p) => <Icon {...p}><polyline points="20 6 9 17 4 12" /></Icon>;
+const Download = (p) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Icon>;
+
+// ---- window.storage (Claudeアーティファクト専用API) の代わりに localStorage を使う ----
+window.storage = {
+  get: async (key) => {
+    const v = localStorage.getItem('gradeledger:' + key);
+    return v != null ? { key, value: v, shared: false } : null;
+  },
+  set: async (key, value) => {
+    localStorage.setItem('gradeledger:' + key, value);
+    return { key, value, shared: false };
+  },
+  delete: async (key) => {
+    localStorage.removeItem('gradeledger:' + key);
+    return { key, deleted: true, shared: false };
+  },
+  list: async (prefix) => {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('gradeledger:' + (prefix || ''))) keys.push(k.replace('gradeledger:', ''));
+    }
+    return { keys, shared: false };
+  },
+};
+
+const GRADES = [
+  '一般D', '一般C', '一般B', '一般A',
+  'チーフC', 'チーフB', 'チーフA',
+  '副店長B', '副店長A',
+  '店長C', '店長B', '店長A', '店長S',
+  'エリアマネジャーC', 'エリアマネジャーB', 'エリアマネジャーA', 'エリアマネジャーS',
+];
+const GRADE_GROUPS = [
+  { label: '一般', codes: ['一般D', '一般C', '一般B', '一般A'] },
+  { label: 'チーフ', codes: ['チーフC', 'チーフB', 'チーフA'] },
+  { label: '副店長', codes: ['副店長B', '副店長A'] },
+  { label: '店長', codes: ['店長C', '店長B', '店長A', '店長S'] },
+  { label: 'エリアマネジャー', codes: ['エリアマネジャーC', 'エリアマネジャーB', 'エリアマネジャーA', 'エリアマネジャーS'] },
+];
+// Excelシートでは AMS/AMA/AMB/AMC と略記されているため、役職として認識できるよう変換する
+const AM_CODE_MAP = { AMS: 'エリアマネジャーS', AMA: 'エリアマネジャーA', AMB: 'エリアマネジャーB', AMC: 'エリアマネジャーC' };
+// 表示スペースが狭い場所(印・組織図の行見出しなど)では短縮表記を使う
+function sealText(code) {
+  if (!code) return '－';
+  if (code.startsWith('エリアマネジャー')) return 'AM' + code.slice(-1);
+  return code;
+}
+const gradeIdx = (g) => (g ? GRADES.indexOf(g) : -1);
+const gradeLabel = (g) => g || '未評価';
+
+const QCOLS = ['12-2月', '3-5月', '6-8月', '9-11月', '12-2月 2', '3-5月 2', '6-8月 2', '9-11月 2', '12-2月 3'];
+const QDATES = ['2024-12-01', '2025-03-01', '2025-06-01', '2025-09-01', '2025-12-01', '2026-03-01', '2026-06-01', '2026-09-01', '2026-12-01'];
+const QLABELS = ['2025年 12-2月', '2025年 3-5月', '2025年 6-8月', '2025年 9-11月', '2026年 12-2月', '2026年 3-5月', '2026年 6-8月', '2026年 9-11月', '2027年 12-2月'];
+
+const C = {
+  ink: '#1F3B4D',
+  inkSoft: '#3E6478',
+  muted: '#7C9BAA',
+  paper: '#F0FBFF',
+  card: '#F8FCFE',
+  line: '#BFDFEC',
+  seal: '#A8342B',
+  up: '#2E6B5F',
+  down: '#8C5A2B',
+};
+
+const FONTS = `
+@import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+.gl-mincho { font-family: 'Shippori Mincho', serif; }
+.gl-sans { font-family: 'Noto Sans JP', sans-serif; }
+`;
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// 入社日から(退職日があればそこまで、なければ今日まで)の社歴を「○年○か月」で表す
+function tenureMonths(joinDate, endDate) {
+  if (!joinDate) return null;
+  const [y, m, d] = joinDate.split('-').map(Number);
+  if (!y || !m) return null;
+  const end = endDate ? new Date(endDate) : new Date();
+  let months = (end.getFullYear() - y) * 12 + (end.getMonth() + 1 - m);
+  if (end.getDate() < (d || 1)) months -= 1;
+  return Math.max(0, months);
+}
+function tenureLabel(joinDate, endDate) {
+  const total = tenureMonths(joinDate, endDate);
+  if (total == null) return '—';
+  const y = Math.floor(total / 12);
+  const m = total % 12;
+  if (y === 0) return `${m}ヶ月`;
+  if (m === 0) return `${y}年`;
+  return `${y}年${m}ヶ月`;
+}
+// 退職済みなら退職日、そうでなければ今日を社歴の終点として使う
+function tenureEndFor(emp) {
+  return emp.resignDate || undefined;
+}
+
+const TENURE_BUCKETS = ['3ヶ月以内', '半年以内', '1-3年以内', '3年以上'];
+function tenureBucket(joinDate, endDate) {
+  const mo = tenureMonths(joinDate, endDate);
+  if (mo == null) return null;
+  if (mo <= 3) return '3ヶ月以内';
+  if (mo <= 6) return '半年以内';
+  if (mo >= 12 && mo <= 36) return '1-3年以内';
+  if (mo > 36) return '3年以上';
+  return null;
+}
+
+function empTypeLabel(t) {
+  if (t === '中途_カンテラ') return 'カンテラ';
+  if (t === '中途_キャリア') return 'キャリア';
+  return t || '';
+}
+
+// 店舗の並び順=取り込んだデータ内で最初に登場した順(=元Excelの行順)を保持する
+function storeAppearanceOrder(roster) {
+  const seen = [];
+  const seenSet = new Set();
+  roster.forEach((r) => { if (r.store && !seenSet.has(r.store)) { seenSet.add(r.store); seen.push(r.store); } });
+  return seen;
+}
+
+// 四半期(3-5月/6-8月/9-11月/12-2月)を通し番号(ordinal)で扱うためのヘルパー
+function quarterOrdinal(dateStr) {
+  const [yStr, mStr] = dateStr.split('-');
+  const y = parseInt(yStr, 10);
+  const m = parseInt(mStr, 10);
+  let idx, groupYear = y;
+  if (m >= 3 && m <= 5) idx = 1;
+  else if (m >= 6 && m <= 8) idx = 2;
+  else if (m >= 9 && m <= 11) idx = 3;
+  else if (m === 12) idx = 4;
+  else { idx = 4; groupYear = y - 1; } // 1月・2月は前年12月始まりの四半期に属する
+  return groupYear * 4 + idx;
+}
+function ordinalToInfo(ordinal) {
+  const groupYear = Math.floor((ordinal - 1) / 4);
+  const idx = ordinal - groupYear * 4;
+  const qText = ['', '3-5月', '6-8月', '9-11月', '12-2月'][idx];
+  const sortMonth = ['', '03', '06', '09', '12'][idx];
+  const labelYear = idx === 4 ? groupYear + 1 : groupYear;
+  return { sortDate: `${groupYear}-${sortMonth}-01`, label: `${labelYear}年 ${qText}` };
+}
+
+// 実際の異動イベントに加え、変動がなかった四半期も「停滞」として補完したフル履歴を生成
+function buildFullTimeline(emp) {
+  const allEvents = (emp.history || []).filter((h) => h.date).slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (allEvents.length === 0) return [];
+
+  // 2024年12月(データ収集開始)より前の履歴は表示しない。その時点の役職だけ起点として引き継ぐ
+  let baselineGrade = null;
+  const events = [];
+  allEvents.forEach((e) => {
+    if (e.date < '2024-12-01') { if (e.toGrade) baselineGrade = e.toGrade; }
+    else events.push(e);
+  });
+  if (events.length === 0 && baselineGrade == null) return [];
+
+  const eventsByOrdinal = new Map();
+  events.forEach((e) => {
+    const ord = quarterOrdinal(e.date);
+    if (!eventsByOrdinal.has(ord)) eventsByOrdinal.set(ord, []);
+    eventsByOrdinal.get(ord).push(e);
+  });
+
+  const startOrd = baselineGrade != null ? DATA_START_ORDINAL : quarterOrdinal(events[0].date);
+  const endOrd = quarterOrdinal(todayStr());
+  const timeline = [];
+  let currentGrade = baselineGrade;
+  for (let ord = startOrd; ord <= endOrd; ord++) {
+    const acts = eventsByOrdinal.get(ord);
+    if (acts && acts.length) {
+      acts.forEach((a) => { timeline.push({ ...a, synthetic: false }); if (a.toGrade) currentGrade = a.toGrade; });
+    } else if (ord === startOrd && baselineGrade != null) {
+      const info = ordinalToInfo(ord);
+      timeline.push({
+        id: `datastart_${emp.id}`,
+        date: info.sortDate,
+        fromGrade: null,
+        toGrade: baselineGrade,
+        reason: '',
+        quarterLabel: info.label,
+        dataStart: true,
+      });
+    } else if (currentGrade) {
+      const info = ordinalToInfo(ord);
+      timeline.push({
+        id: `synthetic_${emp.id}_${ord}`,
+        date: info.sortDate,
+        fromGrade: currentGrade,
+        toGrade: currentGrade,
+        reason: '',
+        quarterLabel: info.label,
+        synthetic: true,
+      });
+    }
+  }
+  return timeline;
+}
+
+// 特定の四半期(ordinal)時点での役職を、履歴から逆算する(Excel再エクスポート用)
+function gradeAtOrdinal(emp, ord) {
+  const events = (emp.history || []).filter((h) => h.date && h.toGrade).slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (events.length === 0) return '';
+  const startOrd = quarterOrdinal(events[0].date);
+  if (ord < startOrd) return '/';
+  let val = events[0].toGrade;
+  for (const e of events) {
+    if (quarterOrdinal(e.date) <= ord) val = e.toGrade; else break;
+  }
+  return val;
+}
+
+const EXPORT_HEADERS = ['氏名', '雇用形態', '在籍状況', 'エリア', '業態', '店舗', '日', '形態', 'アラート', ...QCOLS, '備考', '勤務状況'];
+
+function exportToExcel(roster) {
+  const qOrdinals = QDATES.map((d) => quarterOrdinal(d));
+  const rows = [
+    Array(EXPORT_HEADERS.length + 1).fill(''),
+    Array(EXPORT_HEADERS.length + 1).fill(''),
+    ['', ...EXPORT_HEADERS],
+  ];
+  roster.forEach((emp) => {
+    const quarterCells = qOrdinals.map((ord) => gradeAtOrdinal(emp, ord));
+    rows.push([
+      '', emp.name, emp.employmentType || '', '在籍中', emp.area || '', emp.businessType || '',
+      emp.store || '', emp.joinDate || '', emp.employmentForm || '', emp.alert || '',
+      ...quarterCells, emp.notes || '', emp.workStatus || '通常',
+    ]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '教育データ');
+  XLSX.writeFile(wb, `昇降格管理台帳_${todayStr()}.xlsx`);
+}
+
+// 最後に役職が変わった(初回配属含む・店舗異動のみは除く)四半期を求める
+function lastGradeChangeOrdinal(emp) {
+  const relevant = (emp.history || []).filter((h) => h.date && !h.noteOnly && (h.fromGrade == null || h.fromGrade !== h.toGrade));
+  if (relevant.length === 0) return null;
+  const last = relevant.reduce((a, b) => (a.date > b.date ? a : b));
+  return quarterOrdinal(last.date);
+}
+
+// データ収集の開始四半期(2024年12月〜)。ずっと昇格していない人はここを起点に数える
+const DATA_START_ORDINAL = quarterOrdinal('2024-12-01');
+
+// 最後の役職変更から何期(四半期)経過しているかを、データ開始(2024年12月)を下限に正確に数える
+function stagnationPeriods(emp) {
+  const todayOrd = quarterOrdinal(todayStr());
+  const maxPeriods = todayOrd - DATA_START_ORDINAL;
+  let lastOrd = lastGradeChangeOrdinal(emp);
+  if (lastOrd == null || lastOrd < DATA_START_ORDINAL) lastOrd = DATA_START_ORDINAL;
+  return Math.min(todayOrd - lastOrd, maxPeriods);
+}
+
+// 店長以外で、2期以上昇格していない人を停滞者とみなす
+function isStagnant(emp) {
+  if (!emp.grade || emp.grade.startsWith('店長') || emp.grade.startsWith('エリアマネジャー')) return false;
+  return stagnationPeriods(emp) >= 2;
+}
+
+
+function parseDateLoose(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const m = s.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
+  if (m) {
+    const [, y, mo, d] = m;
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  const d2 = new Date(s);
+  if (!isNaN(d2.getTime())) return d2.toISOString().slice(0, 10);
+  return null;
+}
+
+function cleanCell(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (s === '' || s === '/') return null;
+  return s;
+}
+
+// Parse rows exported in the "Excelヘッダーをそのままキーにした" JSON format
+// (name-based columns: 氏名, エリア, 業態, 店舗, 雇用形態, 形態, 日, アラート, 異動履歴, 備考, and the 9 quarter columns)
+
+function parseImportRows(rows) {
+  const employees = [];
+  const errors = [];
+  rows.forEach((row, i) => {
+    const name = cleanCell(row['氏名']);
+    if (!name) return;
+    const joinDate = parseDateLoose(row['日']);
+
+    const history = [];
+    let lastGrade = null;
+    QCOLS.forEach((col, qi) => {
+      let raw = cleanCell(row[col]);
+      if (raw != null && AM_CODE_MAP[raw]) raw = AM_CODE_MAP[raw];
+      if (raw == null || !GRADES.includes(raw)) return;
+      if (lastGrade == null) {
+        history.push({
+          id: `h${Date.now()}_${i}_${qi}`,
+          date: joinDate || QDATES[qi],
+          fromGrade: null,
+          toGrade: raw,
+          reason: '初期配属',
+          quarterLabel: QLABELS[qi],
+        });
+        lastGrade = raw;
+      } else if (raw !== lastGrade) {
+        history.push({
+          id: `h${Date.now()}_${i}_${qi}b`,
+          date: QDATES[qi],
+          fromGrade: lastGrade,
+          toGrade: raw,
+          reason: '四半期評価',
+          quarterLabel: QLABELS[qi],
+        });
+        lastGrade = raw;
+      }
+    });
+
+    const rawNotes = cleanCell(row['異動履歴']);
+    const notesParts = [rawNotes, cleanCell(row['備考'])].filter(Boolean);
+    const rawWorkStatus = cleanCell(row['勤務状況']);
+    const workStatus = rawWorkStatus == null ? '通常'
+      : rawWorkStatus.includes('休職') ? '休職'
+      : rawWorkStatus.includes('時短') ? '時短'
+      : rawWorkStatus.includes('退職') ? '退職'
+      : '通常';
+
+    employees.push({
+      id: `e${Date.now()}_${i}`,
+      name,
+      area: cleanCell(row['エリア']) || '',
+      businessType: cleanCell(row['業態']) || '',
+      store: cleanCell(row['店舗']) || '',
+      employmentType: cleanCell(row['雇用形態']) || '',
+      employmentForm: cleanCell(row['形態']) || '',
+      joinDate,
+      resignDate: '',
+      alert: cleanCell(row['アラート']) || '',
+      notes: notesParts.join('\n'),
+      workStatus,
+      grade: lastGrade,
+      history,
+    });
+  });
+  return { employees, errors };
+}
+
+const SEED_DATA = 
+[{"id": "e0", "name": "近藤 亮介", "area": "見越", "businessType": "C", "store": "上野", "employmentType": "中途_カンテラ", "employmentForm": "アルバイト", "joinDate": null, "alert": "", "notes": "", "grade": "店長A", "history": [{"date": "2026-03-01", "fromGrade": null, "toGrade": "店長A", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e1", "name": "河合 茉瑚", "area": "見越", "businessType": "C", "store": "上野", "employmentType": "新卒", "employmentForm": "アルバイト", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e2", "name": "ソー メイ アウン", "area": "見越", "businessType": "C", "store": "上野", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2024-10-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2024-10-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e3", "name": "向井 将伍", "area": "見越", "businessType": "C", "store": "上野", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-03-01", "alert": "", "notes": "", "grade": "一般A", "history": [{"date": "2026-03-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e4", "name": "酒勺 結樹志", "area": "見越", "businessType": "C", "store": "上野", "employmentType": "中途_カンテラ", "employmentForm": "アルバイト", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e5", "name": "安松 莉那", "area": "吉川", "businessType": "C", "store": "川崎", "employmentType": "新卒", "employmentForm": "直社員", "joinDate": "2022-04-01", "alert": "", "notes": "", "grade": "店長A", "history": [{"date": "2022-04-01", "fromGrade": null, "toGrade": "店長B", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "店長B", "toGrade": "店長A", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e6", "name": "車崎 史昴", "area": "吉川", "businessType": "C", "store": "川崎", "employmentType": "中途_キャリア", "employmentForm": "直社員", "joinDate": "2025-11-01", "alert": "", "notes": "", "grade": "副店長A", "history": [{"date": "2025-11-01", "fromGrade": null, "toGrade": "副店長A", "reason": "初期配属", "quarterLabel": "2025年 9-11月"}]}, {"id": "e7", "name": "一方井 麻凜", "area": "吉川", "businessType": "C", "store": "川崎", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2025-05-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-05-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e8", "name": "ミャッ ノー ワイ", "area": "吉川", "businessType": "C", "store": "川崎", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2025-12-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e9", "name": "塚田 桜大", "area": "吉川", "businessType": "C", "store": "川崎", "employmentType": "中途_カンテラ", "employmentForm": "アルバイト", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e10", "name": "髙橋 祐二", "area": "吉川", "businessType": "C", "store": "川崎", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-06-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2026-06-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2026年 6-8月"}]}, {"id": "e11", "name": "田尻 和正", "area": "岩本", "businessType": "C", "store": "歌舞伎町", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}]}, {"id": "e12", "name": "鴨田 祐伎哉", "area": "岩本", "businessType": "C", "store": "歌舞伎町", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-03-01", "alert": "", "notes": "", "grade": "副店長B", "history": [{"date": "2025-03-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-12-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e13", "name": "小早川 真", "area": "岩本", "businessType": "C", "store": "歌舞伎町", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-07-01", "alert": "", "notes": "", "grade": "副店長B", "history": [{"date": "2025-07-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2026-03-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e14", "name": "鈴木 かぬ", "area": "岩本", "businessType": "C", "store": "歌舞伎町", "employmentType": "新卒", "employmentForm": "アルバイト", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "一般D", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-06-01", "fromGrade": "一般D", "toGrade": "一般C", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "一般C", "toGrade": "一般B", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e15", "name": "鶴巻 孝太", "area": "堀江", "businessType": "C", "store": "所沢", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-09-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "副店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e16", "name": "町田 悠", "area": "堀江", "businessType": "C", "store": "所沢", "employmentType": "中途_カンテラ", "employmentForm": "アルバイト", "joinDate": "2025-05-01", "alert": "２期", "notes": "", "grade": "チーフA", "history": [{"date": "2025-05-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e17", "name": "ミョー ジン アウン", "area": "堀江", "businessType": "C", "store": "所沢", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2024-12-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2026-03-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e18", "name": "嘉松 樹南", "area": "堀江", "businessType": "C", "store": "所沢", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2026-02-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2026-02-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e19", "name": "早瀬 楓", "area": "堀江", "businessType": "C", "store": "渋谷宇田川町", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "副店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}]}, {"id": "e20", "name": "石井 健斗", "area": "堀江", "businessType": "C", "store": "渋谷宇田川町", "employmentType": "新卒", "employmentForm": "アルバイト", "joinDate": "2023-04-01", "alert": "３期-", "notes": "", "grade": "副店長A", "history": [{"date": "2023-04-01", "fromGrade": null, "toGrade": "副店長B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "副店長B", "toGrade": "副店長A", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}]}, {"id": "e21", "name": "里村 隼", "area": "堀江", "businessType": "C", "store": "渋谷宇田川町", "employmentType": "中途", "employmentForm": "", "joinDate": "2024-10-01", "alert": "３期-", "notes": "", "grade": "チーフA", "history": [{"date": "2024-10-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}]}, {"id": "e22", "name": "ムハマド アズカ トリヒダヤットプトラ", "area": "堀江", "businessType": "C", "store": "渋谷宇田川町", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2024-10-01", "alert": "２期", "notes": "", "grade": "チーフB", "history": [{"date": "2024-10-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-03-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e23", "name": "片桐 伸吾", "area": "堀江", "businessType": "C", "store": "渋谷宇田川町", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2025-12-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e24", "name": "小池 菜々", "area": "岩本", "businessType": "C", "store": "大宮", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-03-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-03-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e25", "name": "カイン テッ テッ チョー", "area": "岩本", "businessType": "C", "store": "大宮", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2024-10-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2024-10-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e26", "name": "志水 咲弥", "area": "岩本", "businessType": "C", "store": "大宮", "employmentType": "中途_カンテラ", "employmentForm": "アルバイト", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "副店長B", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e27", "name": "関本 和暉", "area": "岩本", "businessType": "C", "store": "大宮", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-11-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-11-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 9-11月"}, {"date": "2026-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e28", "name": "古庄 美彦", "area": "矢野", "businessType": "C", "store": "大宮", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2025-09-01", "alert": "", "notes": "【2026/6/16：CONA田町芝浦店からCONA大宮店に店舗異動】", "grade": "チーフB", "history": [{"date": "2025-09-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 9-11月"}, {"date": "2026-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e29", "name": "桑原 千嘉來", "area": "岩本", "businessType": "C", "store": "大宮", "employmentType": "新卒", "employmentForm": "アルバイト", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "一般A", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e30", "name": "鈴木 啓祐", "area": "吉川", "businessType": "C", "store": "蒲田", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-06-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2026-06-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 6-8月"}]}, {"id": "e31", "name": "チャン チャン", "area": "吉川", "businessType": "C", "store": "蒲田", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2025-06-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-06-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e32", "name": "山口 弘樹", "area": "矢野", "businessType": "C", "store": "立川", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "副店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e33", "name": "乙 凱翔", "area": "矢野", "businessType": "C", "store": "立川", "employmentType": "新卒", "employmentForm": "", "joinDate": "2022-04-01", "alert": "", "notes": "", "grade": "副店長B", "history": [{"date": "2022-04-01", "fromGrade": null, "toGrade": "副店長B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}]}, {"id": "e34", "name": "渡邊 杏花莉", "area": "矢野", "businessType": "C", "store": "立川", "employmentType": "新卒", "employmentForm": "直社員", "joinDate": "2025-04-01", "alert": "２期", "notes": "", "grade": "チーフA", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-06-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e35", "name": "大松 風太", "area": "矢野", "businessType": "C", "store": "立川", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-01-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2026-01-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e36", "name": "小松 夏音", "area": "矢野", "businessType": "C", "store": "立川", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e37", "name": "浅川 彩美", "area": "吉川", "businessType": "C", "store": "横浜鶴屋町", "employmentType": "新卒", "employmentForm": "直社員", "joinDate": "2022-04-01", "alert": "", "notes": "", "grade": "店長B", "history": [{"date": "2022-04-01", "fromGrade": null, "toGrade": "副店長B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-03-01", "fromGrade": "副店長B", "toGrade": "副店長A", "reason": "四半期評価", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "副店長A", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2026-03-01", "fromGrade": "店長C", "toGrade": "店長B", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e38", "name": "グエン ティ フオン アイン", "area": "吉川", "businessType": "C", "store": "横浜鶴屋町", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2024-02-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2024-02-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e39", "name": "テディヘルディアン ペルマナ", "area": "吉川", "businessType": "C", "store": "横浜鶴屋町", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2025-02-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-02-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-09-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e40", "name": "井上 弥樹", "area": "吉川", "businessType": "C", "store": "横浜鶴屋町", "employmentType": "新卒", "employmentForm": "直社員", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-12-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e41", "name": "菊地 恋羽", "area": "吉川", "businessType": "C", "store": "横浜鶴屋町", "employmentType": "新卒", "employmentForm": "直社員", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "一般A", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e42", "name": "鳥海 竜生", "area": "青山", "businessType": "C", "store": "船橋", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2025-06-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}]}, {"id": "e43", "name": "ムハンマド リフキ", "area": "青山", "businessType": "C", "store": "船橋", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2024-04-04", "alert": "３期-", "notes": "", "grade": "チーフC", "history": [{"date": "2024-04-04", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}]}, {"id": "e44", "name": "パン フウ", "area": "青山", "businessType": "C", "store": "船橋", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2024-12-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e45", "name": "角田 茉亜子", "area": "青山", "businessType": "C", "store": "船橋", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2026-03-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2026-03-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e46", "name": "加藤 もえ", "area": "矢野", "businessType": "C", "store": "溝の口", "employmentType": "中途_カンテラ", "employmentForm": "", "joinDate": "2024-07-01", "alert": "", "notes": "11月店長", "grade": "店長C", "history": [{"date": "2024-07-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "副店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}]}, {"id": "e47", "name": "内野 美鶴希", "area": "矢野", "businessType": "C", "store": "溝の口", "employmentType": "新卒", "employmentForm": "アルバイト", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e48", "name": "ヘイン テッ ゾー", "area": "矢野", "businessType": "C", "store": "溝の口", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2025-06-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-06-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e49", "name": "海原 幸太郎", "area": "矢野", "businessType": "C", "store": "溝の口", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-08-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-08-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2026-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e50", "name": "下山 晃輝", "area": "堀江", "businessType": "C", "store": "錦糸町", "employmentType": "新卒", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長B", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "店長C", "toGrade": "店長B", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e51", "name": "オクヤマ ブルーノ ヒカル", "area": "堀江", "businessType": "C", "store": "錦糸町", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2025-12-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e52", "name": "ナンダー ミイン アウン", "area": "堀江", "businessType": "C", "store": "錦糸町", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2026-01-01", "alert": "", "notes": "", "grade": "一般A", "history": [{"date": "2026-01-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e53", "name": "髙原 佳子", "area": "堀江", "businessType": "C", "store": "錦糸町", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-05-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2026-05-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e54", "name": "目黒 未希", "area": "牧田", "businessType": "C", "store": "たまプラーザ", "employmentType": "中途_カンテラ", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長B", "history": [{"date": "2025-03-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2026-03-01", "fromGrade": "店長C", "toGrade": "店長B", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e55", "name": "ファレル フィルマンジャヤ", "area": "牧田", "businessType": "C", "store": "たまプラーザ", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2025-02-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-02-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2026-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e56", "name": "天神 美咲", "area": "牧田", "businessType": "C", "store": "たまプラーザ", "employmentType": "その他", "employmentForm": "", "joinDate": "2025-03-01", "alert": "３期-", "notes": "", "grade": "副店長B", "history": [{"date": "2025-03-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}]}, {"id": "e57", "name": "桑垣 桜太", "area": "牧田", "businessType": "C", "store": "たまプラーザ", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-05-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2026-05-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2026年 6-8月"}]}, {"id": "e58", "name": "坪木 健斗", "area": "岩本", "businessType": "C", "store": "恵比寿", "employmentType": "中途", "employmentForm": "", "joinDate": "2024-09-01", "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2024-09-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2026-06-01", "fromGrade": "副店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e59", "name": "大槻 零樹", "area": "岩本", "businessType": "C", "store": "恵比寿", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2026-07-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2026-07-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 6-8月"}]}, {"id": "e60", "name": "石戸 慶祐", "area": "青山", "businessType": "C", "store": "柏", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "２期", "notes": "", "grade": "副店長B", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-12-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e61", "name": "ラマ ダニアル リズキー", "area": "青山", "businessType": "C", "store": "柏", "employmentType": "外国人", "employmentForm": "", "joinDate": "2024-08-08", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2024-08-08", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-06-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e62", "name": "穂苅 望波", "area": "青山", "businessType": "C", "store": "柏", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-01-01", "alert": "２期", "notes": "", "grade": "チーフB", "history": [{"date": "2026-01-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}]}, {"id": "e63", "name": "笠原 雄聖", "area": "岩本", "businessType": "C", "store": "麻布十番", "employmentType": "新卒", "employmentForm": "", "joinDate": "2024-04-01", "alert": "", "notes": "2月店長", "grade": "店長C", "history": [{"date": "2024-04-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "副店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e64", "name": "木本 尚弘", "area": "岩本", "businessType": "C", "store": "麻布十番", "employmentType": "その他", "employmentForm": "アルバイト", "joinDate": "2025-09-01", "alert": "", "notes": "", "grade": null, "history": []}, {"id": "e65", "name": "長根尾 樹", "area": "岩本", "businessType": "C", "store": "麻布十番", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-07-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-07-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}]}, {"id": "e66", "name": "ソウン ピョー リン", "area": "岩本", "businessType": "C", "store": "麻布十番", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2026-01-01", "alert": "", "notes": "", "grade": "一般A", "history": [{"date": "2026-01-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e67", "name": "松尾 名雪", "area": "見越", "businessType": "C", "store": "津田沼", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "副店長A", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2026-03-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "副店長B", "toGrade": "副店長A", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e68", "name": "小松原 稜太", "area": "見越", "businessType": "C", "store": "津田沼", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e69", "name": "ヘイ マン トゥン", "area": "見越", "businessType": "C", "store": "津田沼", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2026-01-01", "alert": "", "notes": "", "grade": "一般A", "history": [{"date": "2026-01-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e70", "name": "川島 駿斗", "area": "見越", "businessType": "C", "store": "津田沼", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2026-02-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2026-02-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}]}, {"id": "e71", "name": "岡本 光生", "area": "矢野", "businessType": "C", "store": "田町芝浦", "employmentType": "中途_カンテラ", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長B", "history": [{"date": "2026-03-01", "fromGrade": null, "toGrade": "店長B", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e72", "name": "岩沢 華", "area": "矢野", "businessType": "C", "store": "田町芝浦", "employmentType": "中途_カンテラ", "employmentForm": "", "joinDate": "2024-07-01", "alert": "", "notes": "", "grade": "副店長B", "history": [{"date": "2024-07-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 3-5月"}, {"date": "2025-12-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e73", "name": "ハエダル ヌル イコマトゥディン", "area": "矢野", "businessType": "C", "store": "田町芝浦", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2025-12-01", "alert": "", "notes": "", "grade": "一般A", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e74", "name": "目黒 宙", "area": "牧田", "businessType": "C", "store": "町田", "employmentType": "新卒", "employmentForm": "", "joinDate": "2021-04-01", "alert": "", "notes": "", "grade": "店長A", "history": [{"date": "2021-04-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "店長C", "toGrade": "店長S", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "店長S", "toGrade": "店長A", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e75", "name": "嶋田 大樹", "area": "吉川", "businessType": "C", "store": "蒲田", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "副店長A", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}, {"date": "2025-03-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "副店長B", "toGrade": "副店長A", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e76", "name": "坂ノ上 甲樹", "area": "牧田", "businessType": "C", "store": "町田", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2025-05-01", "alert": "", "notes": "2026052段階降格", "grade": "チーフA", "history": [{"date": "2025-05-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2026-03-01", "fromGrade": "店長C", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e77", "name": "松本 玲奈", "area": "牧田", "businessType": "C", "store": "町田", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": null, "history": []}, {"id": "e78", "name": "不二原 凌", "area": "吉川", "businessType": "C", "store": "京急蒲田", "employmentType": "中途_カンテラ", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "店長B", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e79", "name": "傳田 寅勝", "area": "吉川", "businessType": "C", "store": "京急蒲田", "employmentType": "中途", "employmentForm": "直社員", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "副店長B", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2026-06-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e80", "name": "テッ ミャッ シュェ イー", "area": "吉川", "businessType": "C", "store": "京急蒲田", "employmentType": "外国人", "employmentForm": "直社員", "joinDate": "2025-06-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-06-01", "fromGrade": null, "toGrade": "一般B", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "一般B", "toGrade": "一般A", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e81", "name": "小池 真弘", "area": "岩本", "businessType": "C", "store": "西新宿一丁目", "employmentType": "新卒", "employmentForm": "", "joinDate": "2023-04-01", "alert": "", "notes": "9月西移動 / 11月移動昇格店長", "grade": "店長C", "history": [{"date": "2023-04-01", "fromGrade": null, "toGrade": "副店長B", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}, {"date": "2025-12-01", "fromGrade": "副店長B", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}]}, {"id": "e82", "name": "奥住 椋", "area": "岩本", "businessType": "C", "store": "西新宿一丁目", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-03-01", "alert": "", "notes": "9月西移動", "grade": "副店長B", "history": [{"date": "2025-03-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2026-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e83", "name": "田中 明", "area": "岩本", "businessType": "C", "store": "西新宿一丁目", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2025-11-01", "alert": "", "notes": "", "grade": "副店長B", "history": [{"date": "2025-11-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 9-11月"}, {"date": "2026-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "チーフA", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e84", "name": "岩瀬 恭彩", "area": "岩本", "businessType": "C", "store": "西新宿一丁目", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-08-01", "alert": "３期-", "notes": "", "grade": "チーフB", "history": [{"date": "2025-08-01", "fromGrade": null, "toGrade": "チーフB", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}]}, {"id": "e85", "name": "木野村 柚乃", "area": "岩本", "businessType": "C", "store": "西新宿一丁目", "employmentType": "新卒", "employmentForm": "アルバイト", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "一般B", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "一般C", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}, {"date": "2026-06-01", "fromGrade": "一般C", "toGrade": "一般B", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e86", "name": "佐藤 陸", "area": "岩本", "businessType": "C", "store": "西新宿一丁目", "employmentType": "中途", "employmentForm": "アルバイト", "joinDate": "2026-06-01", "alert": "", "notes": "", "grade": "チーフC", "history": [{"date": "2026-06-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 6-8月"}]}, {"id": "e87", "name": "金野 直人", "area": "岩本", "businessType": "C", "store": "新宿東南口", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "10月東南移動", "grade": "店長C", "history": [{"date": "2024-12-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2025年 12-2月"}]}, {"id": "e88", "name": "三上 隆弘", "area": "岩本", "businessType": "C", "store": "新宿東南口", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-05-01", "alert": "３期-", "notes": "", "grade": "一般A", "history": [{"date": "2025-05-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}]}, {"id": "e89", "name": "宮田 信長", "area": "岩本", "businessType": "C", "store": "新宿東南口", "employmentType": "新卒", "employmentForm": "直社員", "joinDate": "2026-04-01", "alert": "", "notes": "", "grade": "一般C", "history": [{"date": "2026-04-01", "fromGrade": null, "toGrade": "一般C", "reason": "初期配属", "quarterLabel": "2026年 3-5月"}]}, {"id": "e90", "name": "荻野 雅教", "area": "吉川", "businessType": "C", "store": "横浜西口", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2025-03-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-06-01", "fromGrade": "チーフC", "toGrade": "副店長B", "reason": "四半期評価", "quarterLabel": "2025年 6-8月"}, {"date": "2025-09-01", "fromGrade": "副店長B", "toGrade": "副店長A", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2026-03-01", "fromGrade": "副店長A", "toGrade": "店長C", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e91", "name": "伊藤 澪", "area": "吉川", "businessType": "C", "store": "横浜西口", "employmentType": "新卒", "employmentForm": "直社員", "joinDate": "2025-04-01", "alert": "", "notes": "", "grade": "チーフB", "history": [{"date": "2025-04-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2026-06-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e92", "name": "山口 善美", "area": "吉川", "businessType": "C", "store": "横浜西口", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-12-01", "alert": "", "notes": "【2026/3：焼売のジョーからCONAに業態異動】\n【2026/4：CONA川崎店から新店舗CONA横浜西口店に異動】", "grade": "チーフC", "history": [{"date": "2025-12-01", "fromGrade": null, "toGrade": "チーフC", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}]}, {"id": "e93", "name": "鈴木 未咲", "area": "吉川", "businessType": "C", "store": "横浜西口", "employmentType": "中途", "employmentForm": "", "joinDate": "2026-01-01", "alert": "", "notes": "【2026/3：焼売のジョーからCONAに業態異動】\n【2026/4：CONA川崎店から新店舗CONA横浜西口店に異動】", "grade": "チーフC", "history": [{"date": "2026-01-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2026年 12-2月"}, {"date": "2026-06-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2026年 6-8月"}]}, {"id": "e94", "name": "和田 貫汰", "area": "牧田", "businessType": "他", "store": "ナポリマン", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": "店長C", "history": [{"date": "2025-06-01", "fromGrade": null, "toGrade": "店長C", "reason": "初期配属", "quarterLabel": "2025年 6-8月"}]}, {"id": "e95", "name": "福田 脩人", "area": "牧田", "businessType": "他", "store": "ナポリマン", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-05-01", "alert": "", "notes": "", "grade": "チーフA", "history": [{"date": "2025-05-01", "fromGrade": null, "toGrade": "一般A", "reason": "初期配属", "quarterLabel": "2025年 3-5月"}, {"date": "2025-09-01", "fromGrade": "一般A", "toGrade": "チーフC", "reason": "四半期評価", "quarterLabel": "2025年 9-11月"}, {"date": "2025-12-01", "fromGrade": "チーフC", "toGrade": "チーフB", "reason": "四半期評価", "quarterLabel": "2026年 12-2月"}, {"date": "2026-03-01", "fromGrade": "チーフB", "toGrade": "チーフA", "reason": "四半期評価", "quarterLabel": "2026年 3-5月"}]}, {"id": "e96", "name": "大城 涼弥", "area": "牧田", "businessType": "他", "store": "ナポリマン", "employmentType": "中途", "employmentForm": "", "joinDate": "2025-10-01", "alert": "３期-", "notes": "", "grade": "チーフA", "history": [{"date": "2025-10-01", "fromGrade": null, "toGrade": "チーフA", "reason": "初期配属", "quarterLabel": "2025年 9-11月"}]}, {"id": "e106", "name": "青山 紀夏", "area": "", "businessType": "C", "store": "", "employmentType": "新卒", "employmentForm": "", "joinDate": null, "alert": "", "notes": "2月マネ", "grade": null, "history": []}, {"id": "e107", "name": "岩本 司", "area": "", "businessType": "C", "store": "", "employmentType": "新卒", "employmentForm": "", "joinDate": null, "alert": "", "notes": "３：A", "grade": null, "history": []}, {"id": "e108", "name": "吉川 雄飛", "area": "", "businessType": "C", "store": "", "employmentType": "新卒", "employmentForm": "", "joinDate": null, "alert": "", "notes": "３B", "grade": null, "history": []}, {"id": "e109", "name": "堀江 敬司", "area": "", "businessType": "C", "store": "", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": null, "history": []}, {"id": "e110", "name": "牧田 陸夢", "area": "", "businessType": "C", "store": "", "employmentType": "新卒", "employmentForm": "", "joinDate": null, "alert": "", "notes": "３C", "grade": null, "history": []}, {"id": "e111", "name": "見越 慧輔", "area": "", "businessType": "C", "store": "", "employmentType": "中途", "employmentForm": "", "joinDate": null, "alert": "", "notes": "2月マネ", "grade": null, "history": []}, {"id": "e112", "name": "矢野 俊平", "area": "", "businessType": "C", "store": "", "employmentType": "中途_カンテラ", "employmentForm": "", "joinDate": null, "alert": "", "notes": "", "grade": null, "history": []}];
+// 役職ごとに色分け:一般=紺、チーフ=緑、副店長=黄、店長=赤(層内は濃淡)
+function relLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const [R, G, B] = [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+}
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function hexToRgba(hex, alpha) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function textColorFor(hex) {
+  return relLuminance(hex) > 0.55 ? '#1C2B39' : '#fff';
+}
+const GRADE_COLORS = {
+  '一般D': '#9DB4CC', '一般C': '#84A0C0', '一般B': '#6C8CB3', '一般A': '#53789F',
+  'チーフC': '#DEF5C7', 'チーフB': '#C9EDA3', 'チーフA': '#B2E47D',
+  '副店長B': '#FFEDB2', '副店長A': '#FFDF73',
+  '店長C': '#FF9B9B', '店長B': '#FF6B6B', '店長A': '#FF3D3D', '店長S': '#B71C1C',
+  'エリアマネジャーC': '#C5A6E8', 'エリアマネジャーB': '#A87FDB', 'エリアマネジャーA': '#8B5CC7', 'エリアマネジャーS': '#5B2C91',
+};
+
+function Seal({ code, size = 44 }) {
+  const label = gradeLabel(code);
+  const short = sealText(code);
+  const isUnknown = !code;
+  const fontSize = short.length >= 4 ? size * 0.21 : size * 0.27;
+  const bg = isUnknown ? 'transparent' : GRADE_COLORS[code] || C.seal;
+  const isTop = code === GRADES[GRADES.length - 1];
+  return (
+    <div
+      className="gl-mincho"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '9999px',
+        border: isUnknown ? `2px dashed ${C.muted}` : isTop ? `2px solid #E8C25A` : `2px solid rgba(0,0,0,0.12)`,
+        boxShadow: isTop ? '0 0 0 2px rgba(232,194,90,0.35)' : 'none',
+        color: isUnknown ? C.muted : textColorFor(bg),
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: isUnknown ? 'none' : 'rotate(-4deg)',
+        lineHeight: 1.1,
+        flexShrink: 0,
+        textAlign: 'center',
+        background: isUnknown ? 'transparent' : bg,
+        padding: 2,
+        boxSizing: 'border-box',
+      }}
+      title={label}
+    >
+      <span style={{ fontSize, fontWeight: 700 }}>{isUnknown ? '－' : short}</span>
+    </div>
+  );
+}
+
+function MoveIcon({ from, to }) {
+  if (from == null) return <Minus size={16} color={C.muted} />;
+  const diff = gradeIdx(to) - gradeIdx(from);
+  if (diff > 0) return <ArrowUp size={16} color={C.up} />;
+  if (diff < 0) return <ArrowDown size={16} color={C.down} />;
+  return <Minus size={16} color={C.muted} />;
+}
+
+const inputStyle = {
+  width: '100%',
+  height: 36,
+  padding: '8px 10px',
+  border: `1px solid ${C.line}`,
+  borderRadius: 5,
+  fontSize: 13,
+  color: C.ink,
+  boxSizing: 'border-box',
+  background: '#fff',
+};
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 5 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function GradeSelect({ value, onChange }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} style={inputStyle}>
+      {GRADE_GROUPS.map((grp) => (
+        <optgroup key={grp.label} label={grp.label}>
+          {grp.codes.map((c) => (<option key={c} value={c}>{c}</option>))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
+function GradeLedger() {
+  const [roster, setRoster] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [storeFilter, setStoreFilter] = useState('すべて');
+  const [areaFilter, setAreaFilter] = useState('すべて');
+  const [workStatusFilter, setWorkStatusFilter] = useState('すべて');
+  const [tenureFilter, setTenureFilter] = useState('すべて');
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState('すべて');
+  const [stagnantOnly, setStagnantOnly] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const idRef = useRef(0);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get('roster', false);
+        if (res && res.value) {
+          setRoster(JSON.parse(res.value));
+        } else {
+          setRoster(SEED_DATA);
+          await window.storage.set('roster', JSON.stringify(SEED_DATA), false);
+        }
+      } catch (e) {
+        setRoster(SEED_DATA);
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []);
+
+  const persist = async (next) => {
+    setRoster(next);
+    setSaving(true);
+    try {
+      await window.storage.set('roster', JSON.stringify(next), false);
+    } catch (e) {
+      console.error('保存に失敗しました', e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const stores = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    roster.forEach((r) => { if (r.store && !seen.has(r.store)) { seen.add(r.store); list.push(r.store); } });
+    return ['すべて', ...list];
+  }, [roster]);
+
+  const areas = useMemo(() => {
+    const set = new Set(roster.map((r) => r.area).filter(Boolean));
+    return ['すべて', ...Array.from(set).sort((a, b) => a.localeCompare(b, 'ja'))];
+  }, [roster]);
+
+  const activeRoster = useMemo(() => roster.filter((r) => (r.workStatus || '通常') !== '退職'), [roster]);
+
+  const stagnantCount = useMemo(() => activeRoster.filter(isStagnant).length, [activeRoster]);
+
+  const [sortKey, setSortKey] = useState('grade'); // 'grade' | 'store' | 'area' | 'tenure'
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'org'
+  const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const filtered = useMemo(() => {
+    const cmp = (a, b) => {
+      let c = 0;
+      if (sortKey === 'grade') c = gradeIdx(a.grade) - gradeIdx(b.grade);
+      else if (sortKey === 'store') c = (a.store || '').localeCompare(b.store || '', 'ja');
+      else if (sortKey === 'area') c = (a.area || '').localeCompare(b.area || '', 'ja');
+      else if (sortKey === 'tenure') c = (tenureMonths(a.joinDate, tenureEndFor(a)) ?? -1) - (tenureMonths(b.joinDate, tenureEndFor(b)) ?? -1);
+      if (c === 0) c = a.name.localeCompare(b.name, 'ja');
+      return sortDir === 'asc' ? c : -c;
+    };
+    return roster
+      .filter((r) => (storeFilter === 'すべて' ? true : r.store === storeFilter))
+      .filter((r) => (areaFilter === 'すべて' ? true : r.area === areaFilter))
+      .filter((r) => (tenureFilter === 'すべて' ? true : tenureBucket(r.joinDate, tenureEndFor(r)) === tenureFilter))
+      .filter((r) => (employmentTypeFilter === 'すべて' ? true : r.employmentType === employmentTypeFilter))
+      .filter((r) => {
+        const ws = r.workStatus || '通常';
+        if (workStatusFilter === 'すべて') return ws !== '退職';
+        return ws === workStatusFilter;
+      })
+      .filter((r) => (stagnantOnly ? isStagnant(r) : true))
+      .filter((r) => {
+        const q = search.trim();
+        if (!q) return true;
+        return r.name.includes(q) || (r.store || '').includes(q) || (r.area || '').includes(q);
+      })
+      .sort(cmp);
+  }, [roster, search, storeFilter, areaFilter, tenureFilter, employmentTypeFilter, workStatusFilter, stagnantOnly, sortKey, sortDir]);
+
+  // 勤務状況・停滞条件を除いた同条件の母集団(店舗・エリア・社歴・雇用形態・検索語のみ)。ここに対する割合を「該当率」として表示する
+  const segmentBase = useMemo(() => {
+    return roster
+      .filter((r) => (storeFilter === 'すべて' ? true : r.store === storeFilter))
+      .filter((r) => (areaFilter === 'すべて' ? true : r.area === areaFilter))
+      .filter((r) => (tenureFilter === 'すべて' ? true : tenureBucket(r.joinDate, tenureEndFor(r)) === tenureFilter))
+      .filter((r) => (employmentTypeFilter === 'すべて' ? true : r.employmentType === employmentTypeFilter))
+      .filter((r) => {
+        const q = search.trim();
+        if (!q) return true;
+        return r.name.includes(q) || (r.store || '').includes(q) || (r.area || '').includes(q);
+      });
+  }, [roster, search, storeFilter, areaFilter, tenureFilter]);
+
+  const segmentPercent = segmentBase.length > 0 ? Math.round((filtered.length / segmentBase.length) * 1000) / 10 : null;
+  const showSegmentStat = tenureFilter !== 'すべて' || workStatusFilter !== 'すべて' || employmentTypeFilter !== 'すべて';
+
+  const gradeCounts = useMemo(() => {
+    const m = {};
+    GRADES.forEach((g) => (m[g] = 0));
+    let unrated = 0;
+    activeRoster.forEach((r) => { if (r.grade) m[r.grade] = (m[r.grade] || 0) + 1; else unrated++; });
+    return { m, unrated };
+  }, [activeRoster]);
+
+  const selected = roster.find((r) => r.id === selectedId) || null;
+
+  const addEmployee = (form) => {
+    const id = `e${Date.now()}_${idRef.current++}`;
+    const entry = {
+      id: `h${Date.now()}_${idRef.current++}`,
+      date: form.joinDate || todayStr(),
+      fromGrade: null,
+      toGrade: form.grade,
+      reason: '初期配属',
+    };
+    const emp = { id, name: form.name, area: form.area, businessType: form.businessType, store: form.store,
+      employmentType: form.employmentType, joinDate: form.joinDate,
+      alert: '', notes: '', grade: form.grade, history: [entry] };
+    persist([...roster, emp]);
+    setShowAdd(false);
+  };
+
+  const recordMove = (empId, form) => {
+    const entry = {
+      id: `h${Date.now()}_${idRef.current++}`,
+      date: form.date || todayStr(),
+      fromGrade: form.fromGrade,
+      toGrade: form.toGrade,
+      reason: form.reason || '',
+      ...(form.toStore != null ? { fromStore: form.fromStore, toStore: form.toStore } : {}),
+    };
+    const next = roster.map((r) => r.id === empId
+      ? { ...r, grade: form.toGrade, store: form.toStore != null ? form.toStore : r.store, history: [...r.history, entry] }
+      : r);
+    persist(next);
+  };
+
+  const updateProfile = (empId, patch) => {
+    const next = roster.map((r) => r.id === empId ? { ...r, ...patch } : r);
+    persist(next);
+  };
+
+  const deleteEmployee = (id) => {
+    persist(roster.filter((r) => r.id !== id));
+    setConfirmDeleteId(null);
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  const clearAll = () => {
+    persist([]);
+    setSelectedId(null);
+    setConfirmClearAll(false);
+  };
+
+  const importEmployees = (newEmployees) => {
+    // 既存データは全て消去し、インポートしたデータで完全に入れ替える
+    persist(newEmployees);
+    setShowImport(false);
+  };
+
+  if (!loaded) {
+    return (
+      <div className="gl-sans" style={{ background: C.paper, minHeight: 480, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <style>{FONTS}</style>
+        <Loader2 className="animate-spin" color={C.muted} size={28} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="gl-sans" style={{ background: C.paper, minHeight: 480, padding: 0 }}>
+      <style>{FONTS}</style>
+      <div style={{ maxWidth: 1040, margin: '0 auto', padding: '28px 20px 60px' }}>
+        <Header
+          saving={saving}
+          onImport={() => setShowImport(true)} onExport={() => exportToExcel(roster)}
+          confirmClearAll={confirmClearAll} setConfirmClearAll={setConfirmClearAll} onClearAll={clearAll}
+          hasData={roster.length > 0}
+        />
+
+        {!selected && (
+          <>
+            <div style={{ display: 'flex', gap: 4, background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, padding: 3, marginBottom: 18, width: 'fit-content' }}>
+              {[['list', '台帳一覧'], ['org', '組織図']].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setViewMode(key)}
+                  style={{
+                    fontSize: 13, padding: '7px 18px', borderRadius: 4, border: 'none', cursor: 'pointer', fontWeight: 500,
+                    background: viewMode === key ? C.ink : 'transparent', color: viewMode === key ? '#fff' : C.inkSoft,
+                  }}
+                >{label}</button>
+              ))}
+            </div>
+
+            {viewMode === 'list' ? (
+              <>
+                <GradeBar counts={gradeCounts.m} unrated={gradeCounts.unrated} total={activeRoster.length} />
+                <Toolbar
+                  search={search} setSearch={setSearch}
+                  storeFilter={storeFilter} setStoreFilter={setStoreFilter} stores={stores}
+                  areaFilter={areaFilter} setAreaFilter={setAreaFilter} areas={areas}
+                  tenureFilter={tenureFilter} setTenureFilter={setTenureFilter}
+                  employmentTypeFilter={employmentTypeFilter} setEmploymentTypeFilter={setEmploymentTypeFilter}
+                  workStatusFilter={workStatusFilter} setWorkStatusFilter={setWorkStatusFilter}
+                  stagnantOnly={stagnantOnly} setStagnantOnly={setStagnantOnly} stagnantCount={stagnantCount}
+                  onAdd={() => setShowAdd(true)}
+                />
+                {showSegmentStat && (
+                  <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="gl-mincho" style={{ fontWeight: 700, color: C.ink, fontSize: 14 }}>{filtered.length}名</span>
+                    該当（この条件の母集団 {segmentBase.length}名中
+                    <span className="gl-mincho" style={{ fontWeight: 700, color: C.seal }}>{segmentPercent}%</span>）
+                  </div>
+                )}
+                {filtered.length === 0 ? (
+                  <EmptyState hasAny={roster.length > 0} onAdd={() => setShowAdd(true)} />
+                ) : (
+                  <RosterTable
+                    rows={filtered} onSelect={setSelectedId}
+                    confirmDeleteId={confirmDeleteId} setConfirmDeleteId={setConfirmDeleteId} onDelete={deleteEmployee}
+                    sortKey={sortKey} sortDir={sortDir} onToggleSort={toggleSort}
+                  />
+                )}
+              </>
+            ) : (
+              <OrgChart roster={activeRoster} onSelect={setSelectedId} />
+            )}
+          </>
+        )}
+
+        {selected && (
+          <DetailView
+            emp={selected}
+            onBack={() => setSelectedId(null)}
+            onRecordMove={(form) => recordMove(selected.id, form)}
+            onUpdateProfile={(patch) => updateProfile(selected.id, patch)}
+          />
+        )}
+      </div>
+
+      {showAdd && <AddModal onClose={() => setShowAdd(false)} onSubmit={addEmployee} />}
+      {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={importEmployees} />}
+    </div>
+  );
+}
+
+function Header({ saving, onImport, onExport, confirmClearAll, setConfirmClearAll, onClearAll, hasData }) {
+  return (
+    <div style={{ borderBottom: `2px solid ${C.ink}`, paddingBottom: 16, marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div>
+        <div className="gl-mincho" style={{ fontSize: 12, letterSpacing: 4, color: C.muted, marginBottom: 4 }}>PERSONNEL GRADE LEDGER</div>
+        <h1 className="gl-mincho" style={{ fontSize: 30, fontWeight: 700, color: C.ink, margin: 0, letterSpacing: 1 }}>昇降格管理台帳</h1>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        {confirmClearAll ? (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: C.seal }}>本当に全データを消去しますか？</span>
+            <button onClick={onClearAll} style={{ fontSize: 12, color: '#fff', background: C.seal, border: 'none', borderRadius: 4, padding: '6px 10px', cursor: 'pointer' }}>消去する</button>
+            <button onClick={() => setConfirmClearAll(false)} style={{ fontSize: 12, color: C.muted, background: 'none', border: `1px solid ${C.line}`, borderRadius: 4, padding: '6px 10px', cursor: 'pointer' }}>取消</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={onImport} title="Excelから一括インポート" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#fff', color: C.ink, border: `1px solid ${C.line}`, borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              <Upload size={14} /> インポート
+            </button>
+            <button onClick={onExport} title="Excelダウンロード" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#fff', color: C.ink, border: `1px solid ${C.line}`, borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              <Download size={14} /> ダウンロード
+            </button>
+            {hasData && (
+              <button onClick={() => setConfirmClearAll(true)} title="全データを消去" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 10px', background: '#fff', color: C.seal, border: `1px solid ${C.seal}`, borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.muted, minWidth: 70, justifyContent: 'flex-end' }}>
+          {saving ? (<><Loader2 className="animate-spin" size={13} /> 保存中…</>) : '保存済み'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const TIER_COLOR = { '店長': '#FF3D3D', '副店長': '#FFDF73', 'チーフ': '#B2E47D', '一般': '#6C8CB3' };
+
+function tierOf(grade) {
+  const g = GRADE_GROUPS.find((grp) => grp.codes.includes(grade));
+  return g ? g.label : null;
+}
+
+function GradeBar({ counts, unrated, total }) {
+  const max = Math.max(1, ...Object.values(counts));
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, padding: '16px 20px', marginBottom: 18 }}>
+      <div style={{ fontSize: 13, color: C.inkSoft, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+        <Users size={14} /> 役職分布（在籍 {total} 名{unrated ? `・未評価 ${unrated} 名` : ''}）
+      </div>
+      <div style={{ display: 'flex', gap: 20, minWidth: 620, overflowX: 'auto' }}>
+        {[...GRADE_GROUPS].reverse().map((grp) => (
+          <div key={grp.label} style={{ display: 'flex', gap: 10 }}>
+            <div style={{ borderLeft: `2px solid ${C.line}`, paddingLeft: 10, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>{grp.label}</div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {[...grp.codes].reverse().map((code) => (
+                  <div key={code} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 34 }}>
+                    <div style={{ position: 'relative', width: 22, height: 56, background: C.paper, borderRadius: 3, display: 'flex', alignItems: 'flex-end', overflow: 'hidden', border: `1px solid ${C.line}` }}>
+                      <div style={{ width: '100%', height: `${(counts[code] / max) * 100}%`, background: GRADE_COLORS[code], opacity: 0.85 }} />
+                    </div>
+                    <div className="gl-mincho" style={{ fontSize: 12, fontWeight: 700, color: C.ink, marginTop: 6 }}>{counts[code]}</div>
+                    <div style={{ fontSize: 9, color: C.muted }}>{code.replace(grp.label, '')}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toolbar({ search, setSearch, storeFilter, setStoreFilter, stores, areaFilter, setAreaFilter, areas, tenureFilter, setTenureFilter, employmentTypeFilter, setEmploymentTypeFilter, workStatusFilter, setWorkStatusFilter, stagnantOnly, setStagnantOnly, stagnantCount, onAdd }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+      <input
+        value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 氏名・店舗・エリアで検索"
+        style={{ ...inputStyle, flex: '1 1 220px' }}
+      />
+      <select value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
+        {areas.map((d) => (<option key={d} value={d}>{d === 'すべて' ? 'エリア：全て' : d}</option>))}
+      </select>
+      <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
+        {stores.map((d) => (<option key={d} value={d}>{d === 'すべて' ? '店舗：全て' : d}</option>))}
+      </select>
+      <select value={tenureFilter} onChange={(e) => setTenureFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
+        <option value="すべて">社歴：全て</option>
+        {TENURE_BUCKETS.map((b) => (<option key={b} value={b}>{b}</option>))}
+      </select>
+      <select value={employmentTypeFilter} onChange={(e) => setEmploymentTypeFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
+        <option value="すべて">雇用形態：全て</option>
+        {EMPLOYMENT_TYPES.map((t) => (<option key={t} value={t}>{empTypeLabel(t)}</option>))}
+      </select>
+      <select
+        value={workStatusFilter}
+        onChange={(e) => setWorkStatusFilter(e.target.value)}
+        style={{ ...inputStyle, width: 'auto', color: workStatusFilter === '退職' ? '#E53935' : C.ink }}
+        title="退職者は通常は一覧から除外されます。ここで「退職」を選ぶと検索できます"
+      >
+        <option value="すべて">勤務状況：全て（退職を除く)</option>
+        {WORK_STATUS_OPTIONS.map((s) => (<option key={s} value={s}>{s}</option>))}
+      </select>
+      <button
+        onClick={() => setStagnantOnly(!stagnantOnly)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 5, fontSize: 13, cursor: 'pointer', fontWeight: 500,
+          background: stagnantOnly ? C.seal : '#fff', color: stagnantOnly ? '#fff' : C.seal, border: `1px solid ${C.seal}`,
+        }}
+        title="店長を除き、2期以上昇格していない社員を抽出"
+      >
+        停滞者を抽出（{stagnantCount}名）
+      </button>
+      <button onClick={onAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: C.ink, color: '#fff', border: 'none', borderRadius: 5, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
+        <Plus size={15} /> 社員を追加
+      </button>
+    </div>
+  );
+}
+
+function EmptyState({ hasAny, onAdd }) {
+  return (
+    <div style={{ background: C.card, border: `1px dashed ${C.line}`, borderRadius: 6, padding: '56px 20px', textAlign: 'center' }}>
+      <ScrollText size={30} color={C.muted} style={{ marginBottom: 10 }} />
+      <div className="gl-mincho" style={{ fontSize: 16, color: C.inkSoft, marginBottom: 6 }}>
+        {hasAny ? '該当する社員が見つかりません' : '台帳はまだ空です'}
+      </div>
+      <div style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>
+        {hasAny ? '検索条件を変更してください' : '最初の社員を登録して管理を始めましょう'}
+      </div>
+      {!hasAny && (
+        <button onClick={onAdd} style={{ padding: '8px 18px', background: C.ink, color: '#fff', border: 'none', borderRadius: 5, fontSize: 13, cursor: 'pointer' }}>社員を追加</button>
+      )}
+    </div>
+  );
+}
+
+function SortHeader({ label, active, dir, onClick }) {
+  return (
+    <div onClick={onClick} style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 3, color: active ? C.ink : C.muted, fontWeight: active ? 700 : 400 }}>
+      {label}
+      <span style={{ fontSize: 9, opacity: active ? 1 : 0.35 }}>{active && dir === 'asc' ? '▲' : '▼'}</span>
+    </div>
+  );
+}
+
+function RosterTable({ rows, onSelect, confirmDeleteId, setConfirmDeleteId, onDelete, sortKey, sortDir, onToggleSort }) {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr auto', gap: 8, padding: '10px 16px', fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.line}`, letterSpacing: 1 }}>
+        <div>氏名</div>
+        <SortHeader label="店舗" active={sortKey === 'store'} dir={sortDir} onClick={() => onToggleSort('store')} />
+        <SortHeader label="エリア" active={sortKey === 'area'} dir={sortDir} onClick={() => onToggleSort('area')} />
+        <SortHeader label="社歴" active={sortKey === 'tenure'} dir={sortDir} onClick={() => onToggleSort('tenure')} />
+        <SortHeader label="現役職" active={sortKey === 'grade'} dir={sortDir} onClick={() => onToggleSort('grade')} />
+        <div></div>
+      </div>
+      {rows.map((r) => {
+        return (
+          <div
+            key={r.id}
+            style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'center', padding: '10px 16px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }}
+            onClick={() => onSelect(r.id)}
+          >
+            <div style={{ fontSize: 14, color: C.ink, fontWeight: 500, position: 'relative', paddingLeft: isFlagged(r.workStatus) ? 12 : 0 }}>
+              {isFlagged(r.workStatus) && (
+                <span style={{ position: 'absolute', top: 0, left: 0, color: '#E53935', fontWeight: 700, fontSize: 8, lineHeight: 1 }} title={r.workStatus}>＊</span>
+              )}
+              {r.name}
+              {isStagnant(r) && <span style={{ marginLeft: 6, fontSize: 10, color: C.seal, border: `1px solid ${C.seal}`, borderRadius: 3, padding: '1px 4px' }}>{stagnationPeriods(r)}期</span>}
+            </div>
+            <div style={{ fontSize: 12, color: C.inkSoft }}>{r.store || '—'}</div>
+            <div style={{ fontSize: 12, color: C.inkSoft }}>{r.area || '—'}</div>
+            <div style={{ fontSize: 12, color: C.inkSoft }}>{tenureLabel(r.joinDate, tenureEndFor(r))}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Seal code={r.grade} size={30} />
+              <span style={{ fontSize: 12, color: C.inkSoft }}>{gradeLabel(r.grade)}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
+              {confirmDeleteId === r.id ? (
+                <>
+                  <button onClick={() => onDelete(r.id)} style={{ fontSize: 11, color: '#fff', background: C.seal, border: 'none', borderRadius: 4, padding: '4px 8px', cursor: 'pointer' }}>削除する</button>
+                  <button onClick={() => setConfirmDeleteId(null)} style={{ fontSize: 11, color: C.muted, background: 'none', border: `1px solid ${C.line}`, borderRadius: 4, padding: '4px 8px', cursor: 'pointer' }}>取消</button>
+                </>
+              ) : (
+                <button onClick={() => setConfirmDeleteId(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: 4 }} title="削除"><Trash2 size={15} /></button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// エリア→店舗の列構成を、データ内での初出順で組み立てる(元シートのブロック構成に近づける)
+function orgChartColumns(roster) {
+  const areaOrder = [];
+  const areaSeen = new Set();
+  const storesByArea = new Map();
+  roster.forEach((r) => {
+    if (!r.store) return;
+    const area = r.area || '未設定';
+    if (!areaSeen.has(area)) { areaSeen.add(area); areaOrder.push(area); storesByArea.set(area, []); }
+    const list = storesByArea.get(area);
+    if (!list.includes(r.store)) list.push(r.store);
+  });
+  return areaOrder.map((area) => ({ area, stores: storesByArea.get(area) }));
+}
+
+function OrgChart({ roster, onSelect }) {
+  const groups = useMemo(() => orgChartColumns(roster), [roster]);
+  const flatStores = useMemo(() => groups.flatMap((g) => g.stores), [groups]);
+
+  const cellMap = useMemo(() => {
+    const m = {};
+    GRADES.forEach((g) => { m[g] = {}; });
+    roster.forEach((r) => {
+      if (!r.grade || !r.store) return;
+      if (!m[r.grade][r.store]) m[r.grade][r.store] = [];
+      m[r.grade][r.store].push(r);
+    });
+    return m;
+  }, [roster]);
+
+  const storeTotals = useMemo(() => {
+    const m = {};
+    roster.forEach((r) => { if (r.store) m[r.store] = (m[r.store] || 0) + 1; });
+    return m;
+  }, [roster]);
+
+  const rowGrades = [...GRADES].reverse().filter((g) => !g.startsWith('エリアマネジャー')); // 店長S〜一般D(上が高位)
+  const LABEL_W = 60;
+  const COL_W = 54;
+  const AREA_NAVY = '#1F3B4D';
+  const STORE_NAVY = '#3E6478';
+
+  if (flatStores.length === 0) {
+    return <div style={{ background: C.card, border: `1px dashed ${C.line}`, borderRadius: 6, padding: '56px 20px', textAlign: 'center', color: C.muted, fontSize: 13 }}>店舗情報のある社員がいません。</div>;
+  }
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: LABEL_W + flatStores.length * COL_W }}>
+          {/* エリア見出し行 */}
+          <div style={{ display: 'flex' }}>
+            <div style={{ width: LABEL_W, flexShrink: 0, background: C.paper, borderRight: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, position: 'sticky', left: 0, zIndex: 3 }} />
+            {groups.map((g) => (
+              <div
+                key={g.area}
+                className="gl-mincho"
+                style={{
+                  width: COL_W * g.stores.length, flexShrink: 0, textAlign: 'center', fontSize: 11, fontWeight: 700,
+                  color: '#fff', background: AREA_NAVY, borderRight: `1px solid rgba(255,255,255,0.25)`, borderBottom: `1px solid ${C.line}`, padding: '6px 1px',
+                }}
+              >{g.area}</div>
+            ))}
+          </div>
+          {/* 店舗見出し行 */}
+          <div style={{ display: 'flex' }}>
+            <div style={{ width: LABEL_W, flexShrink: 0, background: C.paper, borderRight: `1px solid ${C.line}`, borderBottom: `2px solid ${C.ink}`, position: 'sticky', left: 0, zIndex: 3 }} />
+            {flatStores.map((store, i) => (
+              <div
+                key={store + i}
+                style={{
+                  width: COL_W, flexShrink: 0, textAlign: 'center', fontSize: 10, color: '#fff',
+                  background: STORE_NAVY, borderRight: `1px solid rgba(255,255,255,0.2)`, borderBottom: `2px solid ${C.ink}`, padding: '5px 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}
+                title={store}
+              >{store}</div>
+            ))}
+          </div>
+          {/* 店舗ごとの人数行 */}
+          <div style={{ display: 'flex' }}>
+            <div
+              className="gl-mincho"
+              style={{
+                width: LABEL_W, flexShrink: 0, background: C.ink, color: '#fff', fontSize: 11, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: `1px solid ${C.line}`, borderBottom: `2px solid ${C.ink}`, padding: '5px 1px', textAlign: 'center',
+                position: 'sticky', left: 0, zIndex: 3,
+              }}
+            >人数</div>
+            {flatStores.map((store, i) => (
+              <div
+                key={store + i}
+                className="gl-mincho"
+                style={{
+                  width: COL_W, flexShrink: 0, textAlign: 'center', fontSize: 12, fontWeight: 700, color: C.ink,
+                  background: C.paper, borderRight: `1px solid ${C.line}`, borderBottom: `2px solid ${C.ink}`, padding: '5px 1px',
+                }}
+              >{storeTotals[store] || 0}</div>
+            ))}
+          </div>
+          {/* 役職ごとの行 */}
+          {rowGrades.map((grade, gi) => {
+            const bg = GRADE_COLORS[grade];
+            const fg = textColorFor(bg);
+            const tierChanged = gi > 0 && tierOf(grade) !== tierOf(rowGrades[gi - 1]);
+            const rowTopBorder = tierChanged ? `1.5px solid ${C.muted}` : `1px solid ${C.line}`;
+            return (
+              <div key={grade} style={{ display: 'flex' }}>
+                <div
+                  className="gl-mincho"
+                  style={{
+                    width: LABEL_W, flexShrink: 0, background: bg, color: fg, fontSize: 11, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: `1px solid ${C.line}`, borderTop: rowTopBorder, borderBottom: `1px solid ${C.line}`, padding: '6px 1px', textAlign: 'center',
+                    position: 'sticky', left: 0, zIndex: 2,
+                  }}
+                  title={grade}
+                >{sealText(grade)}</div>
+                {flatStores.map((store, i) => {
+                  const people = (cellMap[grade] && cellMap[grade][store]) || [];
+                  const surnameCounts = {};
+                  people.forEach((p) => { const sn = p.name.split(/\s+/)[0]; surnameCounts[sn] = (surnameCounts[sn] || 0) + 1; });
+                  return (
+                    <div
+                      key={store + i}
+                      style={{
+                        width: COL_W, flexShrink: 0, minHeight: 32, borderRight: `1px solid ${C.line}`, borderTop: rowTopBorder, borderBottom: `1px solid ${C.line}`,
+                        padding: '3px 2px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: C.card,
+                      }}
+                    >
+                      {people.map((p) => {
+                        const sn = p.name.split(/\s+/)[0];
+                        const display = surnameCounts[sn] > 1 ? p.name : sn;
+                        return (
+                          <span
+                            key={p.id}
+                            onClick={() => onSelect(p.id)}
+                            style={{ fontSize: 11, color: isFlagged(p.workStatus) ? '#E53935' : C.ink, cursor: 'pointer', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}
+                            title={p.name}
+                          >{isFlagged(p.workStatus) ? '＊' : ''}{display}</span>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+const EMPLOYMENT_TYPES = ['新卒', '中途', '中途_カンテラ', '中途_キャリア', '外国人', 'その他'];
+const WORK_STATUS_OPTIONS = ['通常', '休職', '時短', '退職'];
+const isFlagged = (status) => status && status !== '通常';
+const EMPLOYMENT_FORMS = ['アルバイト', '直社員'];
+
+function AddModal({ onClose, onSubmit }) {
+  const [name, setName] = useState('');
+  const [area, setArea] = useState('');
+  const [businessType, setBusinessType] = useState('');
+  const [store, setStore] = useState('');
+  const [employmentType, setEmploymentType] = useState('新卒');
+  const [grade, setGrade] = useState('一般D');
+  const [joinDate, setJoinDate] = useState(todayStr());
+
+  const canSubmit = name.trim().length > 0;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,43,57,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+      <div className="gl-sans" style={{ background: C.card, borderRadius: 8, width: '100%', maxWidth: 420, padding: 24, border: `1px solid ${C.line}`, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div className="gl-mincho" style={{ fontSize: 17, fontWeight: 700, color: C.ink }}>社員を追加</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
+        </div>
+        <Field label="氏名"><input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder="山田 太郎" autoFocus /></Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="エリア"><input value={area} onChange={(e) => setArea(e.target.value)} style={inputStyle} placeholder="吉川" /></Field>
+          <Field label="業態"><input value={businessType} onChange={(e) => setBusinessType(e.target.value)} style={inputStyle} placeholder="C" /></Field>
+        </div>
+        <Field label="店舗"><input value={store} onChange={(e) => setStore(e.target.value)} style={inputStyle} placeholder="川崎" /></Field>
+        <Field label="雇用形態">
+          <select value={employmentType} onChange={(e) => setEmploymentType(e.target.value)} style={inputStyle}>
+            {EMPLOYMENT_TYPES.map((t) => (<option key={t} value={t}>{empTypeLabel(t)}</option>))}
+          </select>
+        </Field>
+        <Field label="初期役職"><GradeSelect value={grade} onChange={setGrade} /></Field>
+        <Field label="入社日"><input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} style={inputStyle} /></Field>
+        <button
+          disabled={!canSubmit}
+          onClick={() => onSubmit({ name: name.trim(), area: area.trim(), businessType: businessType.trim(), store: store.trim(), employmentType, grade, joinDate })}
+          style={{ width: '100%', marginTop: 8, padding: '10px', background: canSubmit ? C.ink : C.line, color: '#fff', border: 'none', borderRadius: 5, fontSize: 14, cursor: canSubmit ? 'pointer' : 'not-allowed' }}
+        >登録する</button>
+      </div>
+    </div>
+  );
+}
+
+function ImportModal({ onClose, onImport }) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState('');
+  const [preview, setPreview] = useState(null);
+
+  const runParse = () => {
+    setError('');
+    setPreview(null);
+    try {
+      const rows = JSON.parse(text);
+      if (!Array.isArray(rows)) throw new Error('JSON配列の形式で貼り付けてください');
+      const { employees } = parseImportRows(rows);
+      if (employees.length === 0) throw new Error('取り込める行が見つかりませんでした。列見出しが「氏名」「エリア」「店舗」「日」「12-2月」等と一致しているか確認してください');
+      setPreview(employees);
+    } catch (e) {
+      setError(e.message || '解析に失敗しました。JSONの形式を確認してください');
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,43,57,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+      <div className="gl-sans" style={{ background: C.card, borderRadius: 8, width: '100%', maxWidth: 560, padding: 24, border: `1px solid ${C.line}`, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div className="gl-mincho" style={{ fontSize: 17, fontWeight: 700, color: C.ink }}>Excelから一括インポート</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
+        </div>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 10, lineHeight: 1.6 }}>
+          Excelマクロで出力したJSON(氏名・エリア・店舗・日・四半期の役職列などを含む配列)を貼り付けてください。<span style={{ color: C.seal, fontWeight: 700 }}>インポートすると現在の台帳データは全て消去され、ここで読み込んだデータに完全に入れ替わります。</span>
+        </div>
+        <textarea
+          value={text} onChange={(e) => setText(e.target.value)}
+          placeholder='[ { "氏名": "山田 太郎", "店舗": "川崎", ... }, ... ]'
+          style={{ ...inputStyle, height: 160, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+        />
+        {error && <div style={{ color: C.seal, fontSize: 12, marginTop: 8 }}>{error}</div>}
+        {preview && (
+          <div style={{ marginTop: 10, fontSize: 12, color: C.seal, background: 'rgba(168,52,43,0.08)', borderRadius: 5, padding: '8px 10px' }}>
+            {preview.length} 名分のデータを読み取りました。「インポートを確定」を押すと、現在の台帳データは全て消去され、この{preview.length}名のデータに入れ替わります。
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <button onClick={runParse} style={{ padding: '9px 16px', background: '#fff', color: C.ink, border: `1px solid ${C.ink}`, borderRadius: 5, fontSize: 13, cursor: 'pointer' }}>解析する</button>
+          <button
+            disabled={!preview}
+            onClick={() => onImport(preview)}
+            style={{ padding: '9px 16px', background: preview ? C.ink : C.line, color: '#fff', border: 'none', borderRadius: 5, fontSize: 13, cursor: preview ? 'pointer' : 'not-allowed' }}
+          >インポートを確定</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileCard({ emp, onUpdateProfile }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(emp);
+
+  useEffect(() => { setForm(emp); setEditing(false); }, [emp.id]);
+
+  if (!editing) {
+    return (
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, padding: 24, marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <Seal code={emp.grade} size={60} />
+          <div style={{ flex: 1 }}>
+            <div className="gl-mincho" style={{ fontSize: 21, fontWeight: 700, color: C.ink }}>{emp.name}</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+              {emp.store || '店舗未設定'}{emp.area ? `（${emp.area}）` : ''} ・ 現役職 {gradeLabel(emp.grade)}
+            </div>
+            <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 6, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              {emp.employmentType && <span>雇用形態: {empTypeLabel(emp.employmentType)}</span>}
+              {emp.joinDate && <span>入社日: {emp.joinDate}（社歴 {tenureLabel(emp.joinDate, tenureEndFor(emp))}）</span>}
+              {isFlagged(emp.workStatus) && <span style={{ color: '#E53935', fontWeight: 700 }}>＊{emp.workStatus}{emp.workStatus === '退職' && emp.resignDate ? `（${emp.resignDate}）` : ''}</span>}
+              {emp.alert && <span style={{ color: C.seal }}>アラート: {emp.alert}</span>}
+            </div>
+            {emp.notes && <div style={{ fontSize: 12, color: C.muted, marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8, whiteSpace: 'pre-line' }}>{emp.notes}</div>}
+          </div>
+          <button onClick={() => setEditing(true)} style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 5, padding: '6px 10px', cursor: 'pointer', color: C.inkSoft, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}>
+            <Pencil size={13} /> 編集
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, padding: 24, marginBottom: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="氏名"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} /></Field>
+        <Field label="店舗"><input value={form.store} onChange={(e) => setForm({ ...form, store: e.target.value })} style={inputStyle} /></Field>
+        <Field label="エリア"><input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} style={inputStyle} /></Field>
+        <Field label="業態"><input value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} style={inputStyle} /></Field>
+        <Field label="雇用形態">
+          <select value={form.employmentType} onChange={(e) => setForm({ ...form, employmentType: e.target.value })} style={inputStyle}>
+            {EMPLOYMENT_TYPES.map((t) => (<option key={t} value={t}>{empTypeLabel(t)}</option>))}
+          </select>
+        </Field>
+        <Field label="入社日"><input type="date" value={form.joinDate || ''} onChange={(e) => setForm({ ...form, joinDate: e.target.value })} style={inputStyle} /></Field>
+        <Field label="勤務状況">
+          <select value={form.workStatus || '通常'} onChange={(e) => setForm({ ...form, workStatus: e.target.value })} style={inputStyle}>
+            {WORK_STATUS_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+          </select>
+        </Field>
+        {form.workStatus === '退職' && (
+          <Field label="退職日"><input type="date" value={form.resignDate || ''} onChange={(e) => setForm({ ...form, resignDate: e.target.value })} style={inputStyle} /></Field>
+        )}
+        <Field label="アラート"><input value={form.alert} onChange={(e) => setForm({ ...form, alert: e.target.value })} style={inputStyle} /></Field>
+      </div>
+      <Field label="備考"><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} style={{ ...inputStyle, height: 60, resize: 'vertical' }} /></Field>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => { onUpdateProfile(form); setEditing(false); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: C.ink, color: '#fff', border: 'none', borderRadius: 5, fontSize: 13, cursor: 'pointer' }}>
+          <Check size={14} /> 保存
+        </button>
+        <button onClick={() => { setForm(emp); setEditing(false); }} style={{ padding: '8px 16px', background: 'none', border: `1px solid ${C.line}`, borderRadius: 5, fontSize: 13, cursor: 'pointer', color: C.muted }}>キャンセル</button>
+      </div>
+    </div>
+  );
+}
+
+function DetailView({ emp, onBack, onRecordMove, onUpdateProfile }) {
+  const [newGrade, setNewGrade] = useState(emp.grade || '一般D');
+  const [newStore, setNewStore] = useState(emp.store || '');
+  const [date, setDate] = useState(todayStr());
+  const [reason, setReason] = useState('');
+
+  useEffect(() => { setNewGrade(emp.grade || '一般D'); setNewStore(emp.store || ''); }, [emp.id]);
+
+  const roleChanged = newGrade !== emp.grade;
+  const storeChanged = newStore.trim() !== (emp.store || '');
+  const canSubmit = roleChanged || storeChanged;
+  const historyDesc = buildFullTimeline(emp).reverse();
+
+  const submit = () => {
+    onRecordMove({
+      fromGrade: emp.grade, toGrade: newGrade,
+      fromStore: storeChanged ? (emp.store || '') : undefined,
+      toStore: storeChanged ? newStore.trim() : undefined,
+      date, reason,
+    });
+    setReason('');
+  };
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: C.inkSoft, fontSize: 13, cursor: 'pointer', marginBottom: 14, padding: 0 }}>
+        <ChevronLeft size={16} /> 台帳一覧に戻る
+      </button>
+
+      <ProfileCard emp={emp} onUpdateProfile={onUpdateProfile} />
+
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, padding: 20, marginBottom: 22 }}>
+        <div className="gl-mincho" style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 14 }}>昇降格を記録</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <Field label="新しい役職"><GradeSelect value={newGrade} onChange={setNewGrade} /></Field>
+          <Field label="発令日"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
+        </div>
+        <Field label="異動先店舗（変更する場合のみ）"><input value={newStore} onChange={(e) => setNewStore(e.target.value)} style={inputStyle} placeholder={emp.store || '店舗名'} /></Field>
+        <Field label="理由・所見"><input value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle} placeholder="人事考課による昇格 など" /></Field>
+        <button disabled={!canSubmit} onClick={submit} style={{ padding: '9px 18px', background: canSubmit ? C.ink : C.line, color: '#fff', border: 'none', borderRadius: 5, fontSize: 13, cursor: canSubmit ? 'pointer' : 'not-allowed' }}>記録する</button>
+        {!canSubmit && <span style={{ fontSize: 12, color: C.muted, marginLeft: 10 }}>役職または店舗を変更してください</span>}
+      </div>
+
+      <div className="gl-mincho" style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 12 }}>昇降格履歴（新しい順）</div>
+      {historyDesc.length === 0 ? (
+        <div style={{ fontSize: 13, color: C.muted }}>まだ評価記録がありません。</div>
+      ) : (
+        <div style={{ position: 'relative', paddingLeft: 4 }}>
+          <div style={{ position: 'absolute', left: 20, top: 8, bottom: 8, width: 1, background: C.line }} />
+          {historyDesc.map((h) => {
+            const roleChangedEntry = h.fromGrade !== h.toGrade;
+            const storeChangedEntry = h.toStore != null;
+            return (
+              <div key={h.id} style={{ display: 'flex', gap: 14, marginBottom: 18, position: 'relative', opacity: h.synthetic ? 0.55 : 1 }}>
+                <div style={{ zIndex: 1 }}><Seal code={h.toGrade} size={h.synthetic ? 32 : 40} /></div>
+                <div style={{ background: C.card, border: `1px ${h.synthetic ? 'dashed' : 'solid'} ${C.line}`, borderRadius: 6, padding: '10px 14px', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                    <MoveIcon from={h.fromGrade} to={h.toGrade} />
+                    <span style={{ fontSize: 13, color: h.synthetic ? C.muted : C.ink, fontWeight: h.synthetic ? 400 : 500 }}>
+                      {h.dataStart
+                        ? `${gradeLabel(h.toGrade)}（データ記録開始時点）`
+                        : h.synthetic
+                        ? `${gradeLabel(h.toGrade)}（変動なし・停滞）`
+                        : h.fromGrade ? `${gradeLabel(h.fromGrade)} → ${gradeLabel(h.toGrade)}` : `${gradeLabel(h.toGrade)}（初回配属）`}
+                    </span>
+                    <span style={{ fontSize: 12, color: C.muted, marginLeft: 'auto' }}>{h.date}</span>
+                  </div>
+                  {storeChangedEntry && (
+                    <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 2 }}>店舗異動：{h.fromStore || '—'} → {h.toStore}</div>
+                  )}
+                  {h.reason && <div style={{ fontSize: 12, color: C.inkSoft }}>{h.reason}{h.quarterLabel ? `（${h.quarterLabel}）` : ''}</div>}
+                  {h.synthetic && h.quarterLabel && <div style={{ fontSize: 11, color: C.muted }}>{h.quarterLabel}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<GradeLedger />);
+
+</script>
+</body>
+</html>
