@@ -510,6 +510,7 @@ function GradeLedger() {
   const [workStatusFilter, setWorkStatusFilter] = useState('すべて');
   const [tenureFilter, setTenureFilter] = useState('すべて');
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState('すべて');
+  const [visibleCols, setVisibleCols] = useState({ store: true, area: true, tenure: true, grade: true });
   const [stagnantOnly, setStagnantOnly] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -729,6 +730,7 @@ function GradeLedger() {
                   employmentTypeFilter={employmentTypeFilter} setEmploymentTypeFilter={setEmploymentTypeFilter}
                   workStatusFilter={workStatusFilter} setWorkStatusFilter={setWorkStatusFilter}
                   stagnantOnly={stagnantOnly} setStagnantOnly={setStagnantOnly} stagnantCount={stagnantCount}
+                  visibleCols={visibleCols} setVisibleCols={setVisibleCols}
                   onAdd={() => setShowAdd(true)}
                 />
                 {showSegmentStat && (
@@ -745,6 +747,7 @@ function GradeLedger() {
                     rows={filtered} onSelect={setSelectedId}
                     confirmDeleteId={confirmDeleteId} setConfirmDeleteId={setConfirmDeleteId} onDelete={deleteEmployee}
                     sortKey={sortKey} sortDir={sortDir} onToggleSort={toggleSort}
+                    visibleCols={visibleCols}
                   />
                 )}
               </>
@@ -846,7 +849,7 @@ function GradeBar({ counts, unrated, total }) {
   );
 }
 
-function Toolbar({ search, setSearch, storeFilter, setStoreFilter, stores, areaFilter, setAreaFilter, areas, tenureFilter, setTenureFilter, employmentTypeFilter, setEmploymentTypeFilter, workStatusFilter, setWorkStatusFilter, stagnantOnly, setStagnantOnly, stagnantCount, onAdd }) {
+function Toolbar({ search, setSearch, storeFilter, setStoreFilter, stores, areaFilter, setAreaFilter, areas, tenureFilter, setTenureFilter, employmentTypeFilter, setEmploymentTypeFilter, workStatusFilter, setWorkStatusFilter, stagnantOnly, setStagnantOnly, stagnantCount, visibleCols, setVisibleCols, onAdd }) {
   return (
     <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
       <input
@@ -886,9 +889,38 @@ function Toolbar({ search, setSearch, storeFilter, setStoreFilter, stores, areaF
       >
         停滞者を抽出（{stagnantCount}名）
       </button>
+      <ColumnToggle visibleCols={visibleCols} setVisibleCols={setVisibleCols} />
       <button onClick={onAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: C.ink, color: '#fff', border: 'none', borderRadius: 5, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
         <Plus size={15} /> 社員を追加
       </button>
+    </div>
+  );
+}
+
+function ColumnToggle({ visibleCols, setVisibleCols }) {
+  const [open, setOpen] = useState(false);
+  const toggle = (key) => setVisibleCols({ ...visibleCols, [key]: !visibleCols[key] });
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#fff', color: C.inkSoft, border: `1px solid ${C.line}`, borderRadius: 5, fontSize: 13, cursor: 'pointer', fontWeight: 500, height: 36, boxSizing: 'border-box' }}
+      >
+        表示項目
+      </button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setOpen(false)} />
+          <div style={{ position: 'absolute', top: '110%', left: 0, background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, padding: 10, zIndex: 11, boxShadow: '0 4px 14px rgba(28,43,57,0.12)', minWidth: 140 }}>
+            {ROSTER_COLS.map((c) => (
+              <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.ink, padding: '5px 4px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={visibleCols[c.key]} onChange={() => toggle(c.key)} />
+                {c.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -919,22 +951,30 @@ function SortHeader({ label, active, dir, onClick }) {
   );
 }
 
-function RosterTable({ rows, onSelect, confirmDeleteId, setConfirmDeleteId, onDelete, sortKey, sortDir, onToggleSort }) {
+const ROSTER_COLS = [
+  { key: 'store', label: '店舗' },
+  { key: 'area', label: 'エリア' },
+  { key: 'tenure', label: '社歴' },
+  { key: 'grade', label: '現役職' },
+];
+
+function RosterTable({ rows, onSelect, confirmDeleteId, setConfirmDeleteId, onDelete, sortKey, sortDir, onToggleSort, visibleCols }) {
+  const cols = ROSTER_COLS.filter((c) => visibleCols[c.key]);
+  const gridTemplateColumns = ['1.4fr', ...cols.map(() => '1fr'), 'auto'].join(' ');
   return (
     <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, overflow: 'hidden' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr auto', gap: 8, padding: '10px 16px', fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.line}`, letterSpacing: 1 }}>
+      <div style={{ display: 'grid', gridTemplateColumns, gap: 8, padding: '10px 16px', fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.line}`, letterSpacing: 1 }}>
         <div>氏名</div>
-        <SortHeader label="店舗" active={sortKey === 'store'} dir={sortDir} onClick={() => onToggleSort('store')} />
-        <SortHeader label="エリア" active={sortKey === 'area'} dir={sortDir} onClick={() => onToggleSort('area')} />
-        <SortHeader label="社歴" active={sortKey === 'tenure'} dir={sortDir} onClick={() => onToggleSort('tenure')} />
-        <SortHeader label="現役職" active={sortKey === 'grade'} dir={sortDir} onClick={() => onToggleSort('grade')} />
+        {cols.map((c) => (
+          <SortHeader key={c.key} label={c.label} active={sortKey === c.key} dir={sortDir} onClick={() => onToggleSort(c.key)} />
+        ))}
         <div></div>
       </div>
       {rows.map((r) => {
         return (
           <div
             key={r.id}
-            style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'center', padding: '10px 16px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }}
+            style={{ display: 'grid', gridTemplateColumns, gap: 8, alignItems: 'center', padding: '10px 16px', borderBottom: `1px solid ${C.line}`, cursor: 'pointer' }}
             onClick={() => onSelect(r.id)}
           >
             <div style={{ fontSize: 14, color: C.ink, fontWeight: 500, position: 'relative', paddingLeft: isFlagged(r.workStatus) ? 12 : 0 }}>
@@ -944,13 +984,15 @@ function RosterTable({ rows, onSelect, confirmDeleteId, setConfirmDeleteId, onDe
               {r.name}
               {isStagnant(r) && <span style={{ marginLeft: 6, fontSize: 10, color: C.seal, border: `1px solid ${C.seal}`, borderRadius: 3, padding: '1px 4px' }}>{stagnationPeriods(r)}期</span>}
             </div>
-            <div style={{ fontSize: 12, color: C.inkSoft }}>{r.store || '—'}</div>
-            <div style={{ fontSize: 12, color: C.inkSoft }}>{r.area || '—'}</div>
-            <div style={{ fontSize: 12, color: C.inkSoft }}>{tenureLabel(r.joinDate, tenureEndFor(r))}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Seal code={r.grade} size={30} />
-              <span style={{ fontSize: 12, color: C.inkSoft }}>{gradeLabel(r.grade)}</span>
-            </div>
+            {visibleCols.store && <div style={{ fontSize: 12, color: C.inkSoft }}>{r.store || '—'}</div>}
+            {visibleCols.area && <div style={{ fontSize: 12, color: C.inkSoft }}>{r.area || '—'}</div>}
+            {visibleCols.tenure && <div style={{ fontSize: 12, color: C.inkSoft }}>{tenureLabel(r.joinDate, tenureEndFor(r))}</div>}
+            {visibleCols.grade && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Seal code={r.grade} size={30} />
+                <span style={{ fontSize: 12, color: C.inkSoft }}>{gradeLabel(r.grade)}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
               {confirmDeleteId === r.id ? (
                 <>
