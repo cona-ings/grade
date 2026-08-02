@@ -159,10 +159,18 @@ function empTypeLabel(t) {
 }
 
 // 店舗の並び順=取り込んだデータ内で最初に登場した順(=元Excelの行順)を保持する
+// 兼任などで「船橋・柏」のように複数店舗が入っている場合、それぞれの店舗名に分割する
+function storeNames(store) {
+  if (!store) return [];
+  return store.split(/[、,・\/／]/).map((s) => s.trim()).filter(Boolean);
+}
+
 function storeAppearanceOrder(roster) {
   const seen = [];
   const seenSet = new Set();
-  roster.forEach((r) => { if (r.store && !seenSet.has(r.store)) { seenSet.add(r.store); seen.push(r.store); } });
+  roster.forEach((r) => {
+    storeNames(r.store).forEach((s) => { if (!seenSet.has(s)) { seenSet.add(s); seen.push(s); } });
+  });
   return seen;
 }
 
@@ -509,7 +517,7 @@ function GradeLedger() {
   const [workStatusFilter, setWorkStatusFilter] = useState('すべて');
   const [tenureFilter, setTenureFilter] = useState('すべて');
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState('すべて');
-  const [visibleCols, setVisibleCols] = useState({ store: true, area: true, tenure: true, grade: true });
+  const [visibleCols, setVisibleCols] = useState({ store: true, area: false, tenure: false, grade: true });
   const [stagnantOnly, setStagnantOnly] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -549,10 +557,7 @@ function GradeLedger() {
   };
 
   const stores = useMemo(() => {
-    const seen = new Set();
-    const list = [];
-    roster.forEach((r) => { if (r.store && !seen.has(r.store)) { seen.add(r.store); list.push(r.store); } });
-    return ['すべて', ...list];
+    return ['すべて', ...storeAppearanceOrder(roster)];
   }, [roster]);
 
   const areas = useMemo(() => {
@@ -584,7 +589,7 @@ function GradeLedger() {
       return sortDir === 'asc' ? c : -c;
     };
     return roster
-      .filter((r) => (storeFilter === 'すべて' ? true : r.store === storeFilter))
+      .filter((r) => (storeFilter === 'すべて' ? true : storeNames(r.store).includes(storeFilter)))
       .filter((r) => (areaFilter === 'すべて' ? true : r.area === areaFilter))
       .filter((r) => (tenureFilter === 'すべて' ? true : tenureBucket(r.joinDate, tenureEndFor(r)) === tenureFilter))
       .filter((r) => (employmentTypeFilter === 'すべて' ? true : r.employmentType === employmentTypeFilter))
@@ -605,7 +610,7 @@ function GradeLedger() {
   // 勤務状況・停滞条件を除いた同条件の母集団(店舗・エリア・社歴・雇用形態・検索語のみ)。ここに対する割合を「該当率」として表示する
   const segmentBase = useMemo(() => {
     return roster
-      .filter((r) => (storeFilter === 'すべて' ? true : r.store === storeFilter))
+      .filter((r) => (storeFilter === 'すべて' ? true : storeNames(r.store).includes(storeFilter)))
       .filter((r) => (areaFilter === 'すべて' ? true : r.area === areaFilter))
       .filter((r) => (tenureFilter === 'すべて' ? true : tenureBucket(r.joinDate, tenureEndFor(r)) === tenureFilter))
       .filter((r) => (employmentTypeFilter === 'すべて' ? true : r.employmentType === employmentTypeFilter))
@@ -1017,11 +1022,12 @@ function orgChartColumns(roster) {
   const areaSeen = new Set();
   const storesByArea = new Map();
   roster.forEach((r) => {
-    if (!r.store) return;
+    const names = storeNames(r.store);
+    if (names.length === 0) return;
     const area = r.area || '未設定';
     if (!areaSeen.has(area)) { areaSeen.add(area); areaOrder.push(area); storesByArea.set(area, []); }
     const list = storesByArea.get(area);
-    if (!list.includes(r.store)) list.push(r.store);
+    names.forEach((s) => { if (!list.includes(s)) list.push(s); });
   });
   return areaOrder.map((area) => ({ area, stores: storesByArea.get(area) }));
 }
@@ -1034,16 +1040,18 @@ function OrgChart({ roster, onSelect }) {
     const m = {};
     GRADES.forEach((g) => { m[g] = {}; });
     roster.forEach((r) => {
-      if (!r.grade || !r.store) return;
-      if (!m[r.grade][r.store]) m[r.grade][r.store] = [];
-      m[r.grade][r.store].push(r);
+      if (!r.grade) return;
+      storeNames(r.store).forEach((s) => {
+        if (!m[r.grade][s]) m[r.grade][s] = [];
+        m[r.grade][s].push(r);
+      });
     });
     return m;
   }, [roster]);
 
   const storeTotals = useMemo(() => {
     const m = {};
-    roster.forEach((r) => { if (r.store) m[r.store] = (m[r.store] || 0) + 1; });
+    roster.forEach((r) => { storeNames(r.store).forEach((s) => { m[s] = (m[s] || 0) + 1; }); });
     return m;
   }, [roster]);
 
@@ -1212,19 +1220,56 @@ function ImportModal({ onClose, onImport }) {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
+  const [fileName, setFileName] = useState('');
 
-  const runParse = () => {
+  const runParseFromRows = (rows) => {
     setError('');
     setPreview(null);
     try {
-      const rows = JSON.parse(text);
-      if (!Array.isArray(rows)) throw new Error('JSON配列の形式で貼り付けてください');
+      if (!Array.isArray(rows) || rows.length === 0) throw new Error('データが見つかりませんでした');
       const { employees } = parseImportRows(rows);
       if (employees.length === 0) throw new Error('取り込める行が見つかりませんでした。列見出しが「氏名」「エリア」「店舗」「日」「12-2月」等と一致しているか確認してください');
       setPreview(employees);
     } catch (e) {
-      setError(e.message || '解析に失敗しました。JSONの形式を確認してください');
+      setError(e.message || '解析に失敗しました');
     }
+  };
+
+  const runParse = () => {
+    try {
+      const rows = JSON.parse(text);
+      runParseFromRows(rows);
+    } catch (e) {
+      setError('JSONの形式を確認してください（' + (e.message || '') + '）');
+    }
+  };
+
+  const handleFile = (file) => {
+    setFileName(file.name);
+    setError('');
+    setPreview(null);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        // 3行目(index 2)が見出し行、4行目(index 3)以降がデータという元シートの構成に合わせる
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+        const headers = aoa[2] || [];
+        const dataRows = aoa.slice(3);
+        const rows = dataRows.map((row) => {
+          const obj = {};
+          headers.forEach((h, i) => {
+            if (h) obj[h] = row[i] != null ? String(row[i]) : '';
+          });
+          return obj;
+        }).filter((obj) => obj['氏名']);
+        runParseFromRows(rows);
+      } catch (e) {
+        setError('Excelファイルの読み込みに失敗しました。シート構成(3行目が見出し)を確認してください');
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   return (
@@ -1235,12 +1280,26 @@ function ImportModal({ onClose, onImport }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
         </div>
         <div style={{ fontSize: 12, color: C.muted, marginBottom: 10, lineHeight: 1.6 }}>
-          Excelマクロで出力したJSON(氏名・エリア・店舗・日・四半期の役職列などを含む配列)を貼り付けてください。<span style={{ color: C.seal, fontWeight: 700 }}>インポートすると現在の台帳データは全て消去され、ここで読み込んだデータに完全に入れ替わります。</span>
+          元シートと同じ形式(.xlsx、3行目が見出し)のファイルをそのままアップロードできます。<span style={{ color: C.seal, fontWeight: 700 }}>インポートすると現在の台帳データは全て消去され、ここで読み込んだデータに完全に入れ替わります。</span>
         </div>
+
+        <label
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 76, border: `1.5px dashed ${C.line}`, borderRadius: 6,
+            color: C.inkSoft, fontSize: 13, cursor: 'pointer', marginBottom: 10, background: C.paper,
+          }}
+        >
+          <Upload size={16} />
+          {fileName ? fileName : 'Excelファイル(.xlsx)を選択'}
+          <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])} />
+        </label>
+
+        <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', margin: '4px 0 10px' }}>― または、マクロで出力したJSONを貼り付け ―</div>
+
         <textarea
           value={text} onChange={(e) => setText(e.target.value)}
           placeholder='[ { "氏名": "山田 太郎", "店舗": "川崎", ... }, ... ]'
-          style={{ ...inputStyle, height: 160, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+          style={{ ...inputStyle, height: 120, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
         />
         {error && <div style={{ color: C.seal, fontSize: 12, marginTop: 8 }}>{error}</div>}
         {preview && (
@@ -1249,7 +1308,7 @@ function ImportModal({ onClose, onImport }) {
           </div>
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <button onClick={runParse} style={{ padding: '9px 16px', background: '#fff', color: C.ink, border: `1px solid ${C.ink}`, borderRadius: 5, fontSize: 13, cursor: 'pointer' }}>解析する</button>
+          <button onClick={runParse} style={{ padding: '9px 16px', background: '#fff', color: C.ink, border: `1px solid ${C.ink}`, borderRadius: 5, fontSize: 13, cursor: 'pointer' }}>貼り付けたJSONを解析</button>
           <button
             disabled={!preview}
             onClick={() => onImport(preview)}
