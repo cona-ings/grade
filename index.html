@@ -270,6 +270,18 @@ function gradeAtOrdinal(emp, ord) {
 
 const EXPORT_HEADERS = ['氏名', '雇用形態', '在籍状況', 'エリア', '業態', '店舗', '日', '形態', 'アラート', ...QCOLS, '備考', '勤務状況'];
 
+function downloadRosterJSON(roster) {
+  const blob = new Blob([JSON.stringify(roster)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'roster.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function exportToExcel(roster) {
   const qOrdinals = QDATES.map((d) => quarterOrdinal(d));
   const rows = [
@@ -531,6 +543,21 @@ function GradeLedger() {
 
   useEffect(() => {
     (async () => {
+      // まず共有データファイル(roster.json)を見に行く。あればブラウザごとの保存内容より優先する
+      try {
+        const res = await fetch('./roster.json', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setRoster(data);
+            try { await window.storage.set('roster', JSON.stringify(data), false); } catch (e) { /* ignore */ }
+            setLoaded(true);
+            return;
+          }
+        }
+      } catch (e) {
+        // roster.json が無い/読み込めない場合はこれまで通りの動作にフォールバック
+      }
       try {
         const res = await window.storage.get('roster', false);
         if (res && res.value) {
@@ -707,6 +734,7 @@ function GradeLedger() {
         <Header
           saving={saving}
           onImport={() => setShowImport(true)} onExport={() => exportToExcel(roster)}
+          onExportJSON={() => downloadRosterJSON(roster)}
           confirmClearAll={confirmClearAll} setConfirmClearAll={setConfirmClearAll} onClearAll={clearAll}
           hasData={roster.length > 0}
         />
@@ -780,7 +808,7 @@ function GradeLedger() {
   );
 }
 
-function Header({ saving, onImport, onExport, confirmClearAll, setConfirmClearAll, onClearAll, hasData }) {
+function Header({ saving, onImport, onExport, onExportJSON, confirmClearAll, setConfirmClearAll, onClearAll, hasData }) {
   return (
     <div style={{ borderBottom: `2px solid ${C.ink}`, paddingBottom: 16, marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
       <div>
@@ -795,12 +823,15 @@ function Header({ saving, onImport, onExport, confirmClearAll, setConfirmClearAl
             <button onClick={() => setConfirmClearAll(false)} style={{ fontSize: 12, color: C.muted, background: 'none', border: `1px solid ${C.line}`, borderRadius: 4, padding: '6px 10px', cursor: 'pointer' }}>取消</button>
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button onClick={onImport} title="Excelから一括インポート" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#fff', color: C.ink, border: `1px solid ${C.line}`, borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
               <Upload size={14} /> インポート
             </button>
             <button onClick={onExport} title="Excelダウンロード" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#fff', color: C.ink, border: `1px solid ${C.line}`, borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
               <Download size={14} /> ダウンロード
+            </button>
+            <button onClick={onExportJSON} title="全員が同じ最新データを見られるよう、roster.jsonとして書き出してGitHubに上げてください" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#fff', color: C.ink, border: `1px solid ${C.line}`, borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              <Download size={14} /> 共有データ書き出し
             </button>
             {hasData && (
               <button onClick={() => setConfirmClearAll(true)} title="全データを消去" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 10px', background: '#fff', color: C.seal, border: `1px solid ${C.seal}`, borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
