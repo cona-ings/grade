@@ -571,24 +571,49 @@ function TurnoverDashboard() {
   const leavers = records.filter(r=>r.exitYM).slice().sort((a,b)=>b.exitYM.localeCompare(a.exitYM));
   const known = leavers.filter(r=>r.hireYM);
   const av = known.length ? (known.reduce((s,r)=>s+gap(r),0)/known.length).toFixed(1) : '-';
+  const currentPeriod = records.filter(r=>r.hireYM && r.hireYM>='2026-09' && r.hireYM<='2027-08');
+  const currentLeavers = currentPeriod.filter(r=>r.exitYM);
+  const currentEndYM = new Date().toISOString().slice(0,7);
+  const currentAverage = currentPeriod.length ? (currentPeriod.reduce((sum,r)=>sum+Math.max(0,ymNo(r.exitYM||currentEndYM)-ymNo(r.hireYM)),0)/currentPeriod.length).toFixed(1) : '-';
   const analysisFrom = '2025-09';
   const recentLeavers = records.filter(r=>r.exitYM && r.exitYM>=analysisFrom);
   const areaRows = [...new Set(recentLeavers.map(r=>r.area).filter(a=>a && a!=='未確認' && a!=='対象外'))].map(area=>{const q=recentLeavers.filter(r=>r.area===area).length;return {area,q,n:recentLeavers.length};}).sort((a,b)=>b.q-a.q);
   const storeRows = [...new Set(recentLeavers.map(r=>r.exitStore).filter(s=>s&&s!=='不明'&&s!=='店舗未確認'&&!s.includes('対象外')))].map(store=>{const q=recentLeavers.filter(r=>r.exitStore===store).length;return {store,q,n:recentLeavers.length};}).sort((a,b)=>b.q-a.q);
-  const card={background:'#fff',border:`1px solid ${C.line}`,borderRadius:8,padding:18};
+  const comparisonRows = [[2,'2ヶ月以内'],[3,'3ヶ月以内'],[12,'1年以内']].map(([months,label])=>{
+    const p17=cohort(periods[0]), p18=cohort(periods[1]);
+    const r17=p17.length ? p17.filter(r=>r.exitYM&&gap(r)<=months).length/p17.length*100 : 0;
+    const r18=p18.length ? p18.filter(r=>r.exitYM&&gap(r)<=months).length/p18.length*100 : 0;
+    return {label,r17,r18};
+  });
+  const card={background:'#fff',border:'2px solid #73809a',borderRadius:8,padding:18};
   const th={textAlign:'left',fontSize:11,color:C.muted,padding:'9px 10px',borderBottom:`1px solid ${C.line}`};
   const td={fontSize:12,color:C.inkSoft,padding:'9px 10px',borderBottom:`1px solid ${C.line}`};
   return <div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12,marginBottom:16,flexWrap:'wrap'}}><div><div className="gl-mincho" style={{fontSize:22,fontWeight:700,color:C.ink}}>離職率ダッシュボード</div><div style={{fontSize:12,color:C.muted,marginTop:5}}>{TURNOVER_DATA.sourceNote}</div></div><div style={{fontSize:11,color:C.seal,background:'#fff5f2',padding:'7px 10px',borderRadius:5}}>年月ベースの参考値</div></div>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10,marginBottom:16}}>
-      {[['入社',records.filter(r=>r.hireYM).length+'名'],['退社',leavers.length+'名'],['平均在籍',av+'ヶ月'],['3ヶ月以内',known.filter(r=>gap(r)<=3).length+'名'],['1年以内',known.filter(r=>gap(r)<=12).length+'名']].map(([a,b])=><div key={a} style={card}><div style={{fontSize:11,color:C.muted}}>{a}</div><div className="gl-mincho" style={{fontSize:24,fontWeight:700,color:C.ink,marginTop:6}}>{b}</div></div>)}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12,marginBottom:16,flexWrap:'wrap'}}><div><div className="gl-mincho" style={{fontSize:22,fontWeight:700,color:C.ink}}>離職率ダッシュボード</div></div><div style={{fontSize:11,color:C.seal,background:'#fff5f2',padding:'7px 10px',borderRadius:5}}>年月ベースの参考値</div></div>
+    <div style={{...card,marginBottom:16}}>
+      <div className="gl-mincho" style={{fontSize:17,fontWeight:700,color:C.ink}}>19期サマリー</div>
+      <div style={{fontSize:11,color:C.muted,margin:'3px 0 12px'}}>2026/09〜2027/08入社</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:8}}>
+        {[
+          ['入社',currentPeriod.length+'名'],['退社',currentLeavers.length+'名'],['平均在籍',currentAverage+'ヶ月'],
+          ['2ヶ月以内',currentLeavers.filter(r=>gap(r)<=2).length+'名'],['3ヶ月以内',currentLeavers.filter(r=>gap(r)<=3).length+'名'],['1年以内',currentLeavers.filter(r=>gap(r)<=12).length+'名']
+        ].map(([a,b])=><div key={a} style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:7,padding:'12px 8px',minWidth:0}}><div style={{fontSize:10,color:C.muted,whiteSpace:'nowrap'}}>{a}</div><div className="gl-mincho" style={{fontSize:'clamp(16px,4.8vw,22px)',fontWeight:700,color:C.ink,marginTop:4,whiteSpace:'nowrap'}}>{b}</div></div>)}
+      </div>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(315px,1fr))',gap:14,marginBottom:16}}>{periods.map(p=>{const x=cohort(p);return <div key={p.label} style={card}><div className="gl-mincho" style={{fontSize:17,fontWeight:700}}>{p.label}</div><div style={{fontSize:11,color:C.muted,margin:'3px 0 12px'}}>{p.sub}／入社 {x.length}名</div>{[[2,'2ヶ月以内'],[3,'3ヶ月以内'],[12,'1年以内']].map(([m,l])=>{const q=x.filter(r=>r.exitYM&&gap(r)<=m).length;return <div key={m} style={{display:'grid',gridTemplateColumns:'1fr 55px 70px',padding:'9px 0',borderTop:`1px solid ${C.line}`,fontSize:12}}><span>{l}</span><b>{q}名</b><b style={{color:C.seal}}>{pct(q,x.length)}</b></div>})}</div>})}</div>
+    <div style={{...card,marginBottom:16}}>
+      <div className="gl-mincho" style={{fontSize:16,fontWeight:700,color:C.ink,marginBottom:4}}>17期・18期 早期離職率比較</div>
+      <div style={{fontSize:11,color:C.muted,marginBottom:14}}>各期の入社人数に対する離職者割合</div>
+      {comparisonRows.map(row=><div key={row.label} style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.inkSoft,marginBottom:6}}>{row.label}</div>
+        <div style={{display:'grid',gridTemplateColumns:'34px 1fr 48px',alignItems:'center',gap:7,marginBottom:5}}><span style={{fontSize:11,color:C.muted}}>17期</span><div style={{height:12,background:C.paper,borderRadius:6,overflow:'hidden'}}><div style={{height:'100%',width:row.r17+'%',background:C.ink,borderRadius:6}} /></div><b style={{fontSize:11,color:C.ink,textAlign:'right'}}>{row.r17.toFixed(1)}%</b></div>
+        <div style={{display:'grid',gridTemplateColumns:'34px 1fr 48px',alignItems:'center',gap:7}}><span style={{fontSize:11,color:C.muted}}>18期</span><div style={{height:12,background:C.paper,borderRadius:6,overflow:'hidden'}}><div style={{height:'100%',width:row.r18+'%',background:C.seal,borderRadius:6}} /></div><b style={{fontSize:11,color:C.seal,textAlign:'right'}}>{row.r18.toFixed(1)}%</b></div>
+      </div>)}
+    </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(310px,1fr))',gap:14,marginBottom:16}}>
       <div style={card}><div className="gl-mincho" style={{fontSize:16,fontWeight:700,marginBottom:10}}>エリア別離職状況</div><div style={{fontSize:11,color:C.muted,marginBottom:8}}>前期以降（2025年9月〜）／退職時エリア基準</div>{areaRows.map(x=><div key={x.area} style={{display:'grid',gridTemplateColumns:'1fr 55px 65px',fontSize:12,padding:'8px 0',borderTop:`1px solid ${C.line}`}}><span>{x.area}</span><span>{x.q}名</span><b style={{color:x.q/x.n>.2?C.seal:C.ink}}>{pct(x.q,x.n)}</b></div>)}</div>
       <div style={card}><div className="gl-mincho" style={{fontSize:16,fontWeight:700,marginBottom:10}}>店舗別離職状況</div><div style={{fontSize:11,color:C.muted,marginBottom:8}}>前期以降（2025年9月〜）／退職時店舗基準</div>{storeRows.slice(0,8).map((x,i)=><div key={x.store} style={{display:'grid',gridTemplateColumns:'25px 1fr 55px 65px',fontSize:12,padding:'8px 0',borderTop:`1px solid ${C.line}`}}><b>{i+1}</b><span>{x.store}</span><span>{x.q}名</span><b style={{color:C.seal}}>{pct(x.q,x.n)}</b></div>)}</div>
     </div>
-    <div style={{...card,marginBottom:16,overflowX:'auto'}}><div className="gl-mincho" style={{fontSize:16,fontWeight:700,marginBottom:10}}>月別 入社・退社推移</div><div style={{display:'flex',alignItems:'flex-end',gap:5,height:150,minWidth:780}}>{TURNOVER_DATA.months.map(m=>{const mx=Math.max(...TURNOVER_DATA.months.map(x=>Math.max(x.hires,x.exits)),1);return <div key={m.ym} title={`${m.ym} 入社${m.hires} 退社${m.exits}`} style={{flex:1,textAlign:'center'}}><div style={{height:110,display:'flex',alignItems:'flex-end',justifyContent:'center',gap:2}}><div style={{width:6,height:(m.hires/mx*100)+'%',background:C.ink}}/><div style={{width:6,height:(m.exits/mx*100)+'%',background:C.seal}}/></div><div style={{fontSize:8,color:C.muted,transform:'rotate(-55deg)',whiteSpace:'nowrap',marginTop:12}}>{m.ym}</div></div>})}</div><div style={{fontSize:11,color:C.muted,marginTop:25}}>■ 入社　<span style={{color:C.seal}}>■</span> 退社</div></div>
     <div style={{...card,overflowX:'auto'}}><div className="gl-mincho" style={{fontSize:16,fontWeight:700,marginBottom:10}}>退職者一覧</div><table style={{width:'100%',borderCollapse:'collapse',minWidth:720}}><thead><tr>{['氏名','入社年月','退社年月','入社店舗','退社店舗','在籍月数','雇用形態','退職時役職'].map(x=><th key={x} style={th}>{x}</th>)}</tr></thead><tbody>{leavers.map((r,i)=><tr key={r.name+i}><td style={{...td,color:C.ink,fontWeight:600}}>{r.name}</td><td style={td}>{r.hireYM||'不明'}</td><td style={td}>{r.exitYM}</td><td style={td}>{r.store}</td><td style={td}>{r.exitStore||r.store}</td><td style={td}>{gap(r)==null?'-':gap(r)+'ヶ月'}</td><td style={td}>{r.employmentType}</td><td style={td}>{r.grade}</td></tr>)}</tbody></table></div>
   </div>;
 }
@@ -927,8 +952,8 @@ function Header({ saving, onImport, onExport, onExportJSON, onExportHTML, onExpo
   return (
     <div style={{ borderBottom: `2px solid ${C.ink}`, paddingBottom: 16, marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
       <div>
-        <div className="gl-mincho" style={{ fontSize: 12, letterSpacing: 4, color: C.muted, marginBottom: 4 }}>PERSONNEL GRADE LEDGER</div>
-        <h1 className="gl-mincho" style={{ fontSize: 30, fontWeight: 700, color: C.ink, margin: 0, letterSpacing: 1 }}>レストラン事業部 営業一課 人事関連データ</h1>
+        <div className="gl-mincho" style={{ fontSize: 12, letterSpacing: 4, color: C.muted, marginBottom: 4 }}>HUMAN RESOURCES DATA</div>
+        <h1 className="gl-mincho" style={{ fontSize: 'clamp(24px, 7vw, 30px)', fontWeight: 700, color: C.ink, margin: 0, letterSpacing: 0, lineHeight: 1.3 }}><span style={{ whiteSpace: 'nowrap' }}>レストラン事業部 営業一課</span><br />人事関連データ</h1>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         {confirmClearAll ? (
@@ -995,7 +1020,7 @@ function GradeBar({ counts, unrated, total }) {
   const max = Math.max(1, ...Object.values(counts));
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, padding: '16px 20px', marginBottom: 18 }}>
+    <div style={{ background: C.card, border: '2px solid #73809a', borderRadius: 6, padding: '16px 20px', marginBottom: 18 }}>
       <div style={{ fontSize: 13, color: C.inkSoft, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
         <Users size={14} /> 役職分布（在籍 {total} 名{unrated ? `・未評価 ${unrated} 名` : ''}）
       </div>
@@ -1138,7 +1163,7 @@ function RosterTable({ rows, onSelect, confirmDeleteId, setConfirmDeleteId, onDe
   const cols = ROSTER_COLS.filter((c) => visibleCols[c.key]);
   const gridTemplateColumns = ['1.4fr', ...cols.map(() => '1fr'), 'auto'].join(' ');
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, overflow: 'hidden' }}>
+    <div style={{ background: C.card, border: '2px solid #73809a', borderRadius: 6, overflow: 'hidden' }}>
       <div style={{ display: 'grid', gridTemplateColumns, gap: 8, padding: '10px 16px', fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.line}`, letterSpacing: 1 }}>
         <div>氏名</div>
         {cols.map((c) => (
@@ -1236,7 +1261,7 @@ function OrgChart({ roster, onSelect }) {
   }
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, overflow: 'hidden' }}>
+    <div style={{ background: C.card, border: '2px solid #73809a', borderRadius: 6, overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto' }}>
         <div style={{ minWidth: LABEL_W + flatStores.length * COL_W }}>
           {/* エリア見出し行 */}
